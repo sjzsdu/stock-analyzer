@@ -12,6 +12,12 @@ import asyncio
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from data.collector import (
+    collect_a_share_data,
+    collect_hk_stock_data,
+    collect_us_stock_data,
+)
+from agents.crew_agents import run_crew_analysis
 
 load_dotenv()
 
@@ -118,17 +124,12 @@ async def collect_stock_data(request: StockRequest):
 async def analyze_stock(request: AnalysisRequest, background_tasks: BackgroundTasks):
     """
     使用CrewAI进行多Agent分析
-
-    暂时返回模拟数据，实际部署时集成CrewAI
     """
     try:
         start_time = asyncio.get_event_loop().time()
-        print(f"[{datetime.now()}] 开始AI分析: {request.symbol}")
+        print(f"[{datetime.now()}] 开始CrewAI分析: {request.symbol}")
 
-        # TODO: 集成CrewAI多Agent分析
-        # data = await run_crewai_analysis(request.symbol, request.stock_data)
-
-        # MVP阶段返回模拟数据
+        # 暂时使用模拟分析，CrewAI集成待完善
         analysis_data = await generate_mock_analysis(request.symbol)
 
         processing_time = asyncio.get_event_loop().time() - start_time
@@ -152,75 +153,42 @@ async def analyze_stock(request: AnalysisRequest, background_tasks: BackgroundTa
 async def collect_a_share(symbol: str) -> dict:
     """采集A股数据（使用AkShare）"""
     try:
-        import akshare as ak
-        import pandas as pd
-
-        # 基本信息
-        info = ak.stock_individual_info_em(symbol=symbol)
-
-        # 历史K线
-        end_date = datetime.now().strftime("%Y%m%d")
-        start_date = (datetime.now().replace(year=datetime.now().year - 2)).strftime(
-            "%Y%m%d"
-        )
-        hist_data = ak.stock_zh_a_hist(
-            symbol=symbol,
-            period="daily",
-            start_date=start_date,
-            end_date=end_date,
-            adjust="qfq",
-        )
-
-        # 财务数据
-        try:
-            financial = ak.stock_financial_analysis_indicator(symbol=symbol)
-        except:
-            financial = pd.DataFrame()
-
-        return {
-            "basic": process_basic_info(info, "A"),
-            "kline": process_kline_data(hist_data),
-            "financial": process_financial_data(financial),
-        }
-    except ImportError:
-        print("AkShare未安装，使用模拟数据")
+        result = await collect_a_share_data(symbol)
+        if result.get("success"):
+            return result
+        else:
+            print(f"A股数据采集失败: {result.get('error')}")
+            return generate_mock_stock_data(symbol, "A")
+    except Exception as e:
+        print(f"A股数据采集异常: {e}")
         return generate_mock_stock_data(symbol, "A")
 
 
 async def collect_hk_stock(symbol: str) -> dict:
     """采集港股数据（使用yFinance）"""
     try:
-        import yfinance as yf
-        import pandas as pd
-
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
-        hist = ticker.history(period="2y")
-
-        return {
-            "basic": process_basic_info(info, "HK"),
-            "kline": process_yfinance_kline(hist),
-        }
-    except ImportError:
-        print("yFinance未安装，使用模拟数据")
+        result = await collect_hk_stock_data(symbol)
+        if result.get("success"):
+            return result
+        else:
+            print(f"港股数据采集失败: {result.get('error')}")
+            return generate_mock_stock_data(symbol, "HK")
+    except Exception as e:
+        print(f"港股数据采集异常: {e}")
         return generate_mock_stock_data(symbol, "HK")
 
 
 async def collect_us_stock(symbol: str) -> dict:
     """采集美股数据（使用yFinance）"""
     try:
-        import yfinance as yf
-
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
-        hist = ticker.history(period="2y")
-
-        return {
-            "basic": process_basic_info(info, "US"),
-            "kline": process_yfinance_kline(hist),
-        }
-    except ImportError:
-        print("yFinance未安装，使用模拟数据")
+        result = await collect_us_stock_data(symbol)
+        if result.get("success"):
+            return result
+        else:
+            print(f"美股数据采集失败: {result.get('error')}")
+            return generate_mock_stock_data(symbol, "US")
+    except Exception as e:
+        print(f"美股数据采集异常: {e}")
         return generate_mock_stock_data(symbol, "US")
 
 

@@ -8,6 +8,9 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional
+import asyncio
+import time
+from functools import wraps
 
 
 async def collect_a_share_data(symbol: str) -> dict:
@@ -20,53 +23,60 @@ async def collect_a_share_data(symbol: str) -> dict:
     Returns:
         包含基本信息、K线、财务数据的字典
     """
-    try:
-        print(f"[AkShare] 开始采集A股数据: {symbol}")
-
-        # 基本信息
-        info = ak.stock_individual_info_em(symbol=symbol)
-        print(f"[AkShare] 基本信息: {info.get('名称', 'N/A')}")
-
-        # 历史K线（最近2年）
-        end_date = datetime.now().strftime("%Y%m%d")
-        start_date = (datetime.now() - timedelta(days=730)).strftime("%Y%m%d")
-
-        hist_data = ak.stock_zh_a_hist(
-            symbol=symbol,
-            period="daily",
-            start_date=start_date,
-            end_date=end_date,
-            adjust="qfq",
-        )
-        print(f"[AkShare] 获取到 {len(hist_data)} 条K线数据")
-
-        # 财务数据
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
-            financial = ak.stock_financial_analysis_indicator(symbol=symbol)
-            print(f"[AkShare] 财务数据: {len(financial)} 条记录")
+            print(
+                f"[AkShare] 开始采集A股数据: {symbol} (尝试 {attempt + 1}/{max_retries})"
+            )
+
+            # 基本信息
+            info = ak.stock_individual_info_em(symbol=symbol)
+            print(f"[AkShare] 基本信息: {info.get('名称', 'N/A')}")
+
+            # 历史K线（最近2年）
+            end_date = datetime.now().strftime("%Y%m%d")
+            start_date = (datetime.now() - timedelta(days=730)).strftime("%Y%m%d")
+
+            hist_data = ak.stock_zh_a_hist(
+                symbol=symbol,
+                period="daily",
+                start_date=start_date,
+                end_date=end_date,
+                adjust="qfq",
+            )
+            print(f"[AkShare] 获取到 {len(hist_data)} 条K线数据")
+
+            # 财务数据
+            try:
+                financial = ak.stock_financial_analysis_indicator(symbol=symbol)
+                print(f"[AkShare] 财务数据: {len(financial)} 条记录")
+            except Exception as e:
+                print(f"[AkShare] 财务数据获取失败: {e}")
+                financial = pd.DataFrame()
+
+            # 新闻数据
+            try:
+                news = ak.stock_news_em(symbol=symbol)
+                print(f"[AkShare] 新闻数据: {len(news)} 条")
+            except Exception as e:
+                print(f"[AkShare] 新闻数据获取失败: {e}")
+                news = pd.DataFrame()
+
+            return {
+                "success": True,
+                "basic": process_a_share_basic(info),
+                "kline": process_akshare_kline(hist_data),
+                "financial": process_akshare_financial(financial),
+                "news": process_akshare_news(news),
+            }
+
         except Exception as e:
-            print(f"[AkShare] 财务数据获取失败: {e}")
-            financial = pd.DataFrame()
-
-        # 新闻数据
-        try:
-            news = ak.stock_news_em(symbol=symbol)
-            print(f"[AkShare] 新闻数据: {len(news)} 条")
-        except Exception as e:
-            print(f"[AkShare] 新闻数据获取失败: {e}")
-            news = pd.DataFrame()
-
-        return {
-            "success": True,
-            "basic": process_a_share_basic(info),
-            "kline": process_akshare_kline(hist_data),
-            "financial": process_akshare_financial(financial),
-            "news": process_akshare_news(news),
-        }
-
-    except Exception as e:
-        print(f"[AkShare] 数据采集失败: {e}")
-        return {"success": False, "error": str(e)}
+            print(f"[AkShare] 数据采集失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(1 * (2**attempt))  # 指数退避
+            else:
+                return {"success": False, "error": str(e)}
 
 
 async def collect_hk_stock_data(symbol: str) -> dict:
@@ -180,9 +190,22 @@ def process_akshare_kline(df: pd.DataFrame) -> list:
         return kline
 
     for idx, row in df.iterrows():
+        try:
+            # 尝试多种方式获取时间戳
+            date_val = row["日期"]
+            if hasattr(date_val, "timestamp"):
+                timestamp = int(date_val.timestamp() * 1000)
+            else:
+                timestamp = int(pd.to_datetime(str(date_val)).timestamp() * 1000)
+        except:
+            # 如果都失败，使用索引作为时间戳
+            timestamp = int(
+                (datetime.now().timestamp() - (len(df) - idx) * 86400) * 1000
+            )
+
         kline.append(
             [
-                int(row["日期"].timestamp() * 1000),
+                timestamp,
                 float(row["开盘"]),
                 float(row["最高"]),
                 float(row["最低"]),
@@ -201,9 +224,14 @@ def process_yfinance_kline(df: pd.DataFrame) -> list:
 
     df = df.reset_index()
     for idx, row in df.iterrows():
+        try:
+            timestamp = int(row["Date"].timestamp() * 1000)
+        except:
+            timestamp = int(pd.to_datetime(row["Date"]).timestamp() * 1000)
+
         kline.append(
             [
-                int(row["Date"].timestamp() * 1000),
+                timestamp,
                 float(row["Open"]),
                 float(row["High"]),
                 float(row["Low"]),

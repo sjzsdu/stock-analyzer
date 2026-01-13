@@ -117,6 +117,8 @@ export async function POST(request: NextRequest) {
       ...analysisData,
       symbol: symbolStr,
       market,
+      klineData: stockData.kline || [],
+      stockBasic: stockData.basic || null,
       createdAt: new Date()
     };
     
@@ -211,22 +213,25 @@ function generateFallbackAnalysis(symbol: string, market: string) {
     risk: 60 + Math.random() * 30,
     macro: 55 + Math.random() * 30
   };
-  
-  const overallScore = 
+
+  const overallScore =
     scores.value * 0.25 +
     scores.technical * 0.15 +
     scores.growth * 0.20 +
     scores.fundamental * 0.15 +
     scores.risk * 0.15 +
     scores.macro * 0.10;
-  
+
   let recommendation: 'strong_buy' | 'buy' | 'hold' | 'wait' | 'sell';
   if (overallScore >= 85) recommendation = 'strong_buy';
   else if (overallScore >= 75) recommendation = 'buy';
   else if (overallScore >= 60) recommendation = 'hold';
   else if (overallScore >= 50) recommendation = 'wait';
   else recommendation = 'sell';
-  
+
+  // 生成K线数据
+  const klineData = generateFallbackData(symbol, market).kline;
+
   return {
     overallScore: parseFloat(overallScore.toFixed(1)),
     recommendation,
@@ -251,8 +256,8 @@ function generateFallbackAnalysis(symbol: string, market: string) {
       input: 5000 + Math.floor(Math.random() * 2000),
       output: 3000 + Math.floor(Math.random() * 1500)
     },
-    klineData: [], // 将在路由中添加
-    stockBasic: null // 将在路由中添加
+    klineData: klineData,
+    stockBasic: generateFallbackData(symbol, market).basic
   };
 }
 

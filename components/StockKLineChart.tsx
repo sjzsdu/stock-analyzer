@@ -6,12 +6,9 @@ let Highcharts: any = null;
 let HighchartsReact: any = null;
 
 if (typeof window !== 'undefined') {
-  Highcharts = require('highcharts/highstock');
+  Highcharts = require('highcharts');
+  require('highcharts/modules/stock')(Highcharts);
   HighchartsReact = require('highcharts-react-official').default;
-  const highchartsMore = require('highcharts/highcharts-more');
-  require('highcharts/modules/stock');
-
-  highchartsMore(Highcharts);
 }
 
 interface Props {

@@ -4,7 +4,12 @@ CrewAI多Agent分析模块
 """
 
 from crewai import Agent, Task, Crew, Process
-from langchain_openai import ChatOpenAI
+
+try:
+    from langchain_openai import ChatOpenAI
+except ImportError:
+    ChatOpenAI = None
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 import asyncio
@@ -15,12 +20,13 @@ load_dotenv()
 # DeepSeek LLM配置
 def get_deepseek_llm(temperature: float = 0.7):
     """获取DeepSeek LLM实例"""
+    from langchain_openai import ChatOpenAI
+
     return ChatOpenAI(
         model="deepseek-chat",
         openai_api_key=os.getenv("DEEPSEEK_API_KEY"),
         openai_api_base="https://api.deepseek.com/v1",
         temperature=temperature,
-        max_tokens=4000,
     )
 
 
