@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
-import { ArrowUp, ArrowDown, TrendingUp, AlertTriangle, CheckCircle, Clock, Home, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { ArrowUp, ArrowDown, TrendingUp, AlertTriangle, CheckCircle, Clock, Home, ChevronDown, ChevronUp, Search, RefreshCw, BarChart3, ShieldAlert, Lightbulb, BrainCircuit } from 'lucide-react';
 import StockKLineChart from '@/components/StockKLineChart';
 
 const roleNames: any = {
@@ -14,21 +14,22 @@ const roleNames: any = {
 };
 
 const roleColors: any = {
-  value: 'bg-blue-500',
-  technical: 'bg-purple-500',
-  growth: 'bg-green-500',
-  fundamental: 'bg-orange-500',
-  risk: 'bg-red-500',
-  macro: 'bg-cyan-500'
+  value: 'bg-gradient-to-r from-blue-500 to-blue-600',
+  technical: 'bg-gradient-to-r from-purple-500 to-purple-600',
+  growth: 'bg-gradient-to-r from-green-500 to-green-600',
+  fundamental: 'bg-gradient-to-r from-orange-500 to-orange-600',
+  risk: 'bg-gradient-to-r from-red-500 to-red-600',
+  macro: 'bg-gradient-to-r from-cyan-500 to-cyan-600'
 };
 
-export default function AnalyzePage({ params }: { params: { symbol: string } }) {
+export default function AnalyzePage({ params }: { params: Promise<{ symbol: string }> }) {
+  const resolvedParams = use(params);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState('');
   const [expandedRoles, setExpandedRoles] = useState<Set<string>>(new Set(['value']));
-  
-  const symbol = decodeURIComponent(params.symbol);
+
+  const symbol = decodeURIComponent(resolvedParams.symbol);
 
   useEffect(() => {
     fetchAnalysis();
@@ -81,14 +82,34 @@ export default function AnalyzePage({ params }: { params: { symbol: string } }) 
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-indigo-600 border-t-transparent mx-auto mb-6"></div>
-          <div className="text-2xl font-bold text-gray-900 mb-2">正在分析中...</div>
-          <div className="text-gray-600">AI多Agent正在深度分析股票数据</div>
-          <div className="text-gray-500 mt-4 flex items-center justify-center gap-2">
-            <Clock className="w-4 h-4" />
+      <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white flex items-center justify-center relative">
+        {/* 背景装饰 */}
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/2 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
+          <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+        </div>
+
+        <div className="text-center glass-effect rounded-3xl p-12 max-w-lg shadow-2xl relative z-10">
+          <div className="animate-spin rounded-full h-20 w-20 border-4 border-purple-500 border-t-transparent mx-auto mb-8 shadow-lg shadow-purple-500/30"></div>
+          <div className="text-3xl font-bold mb-4 gradient-text">正在分析中...</div>
+          <div className="text-white/70 text-lg mb-6">AI多Agent正在深度分析股票数据</div>
+          <div className="text-white/50 flex items-center justify-center gap-2 mb-8">
+            <Clock className="w-5 h-5" />
             <span>预计需要30-60秒</span>
+          </div>
+          <div className="space-y-3 text-sm text-white/60 bg-white/5 rounded-2xl p-6 border border-white/10">
+            <div className="flex items-center gap-3">
+              <RefreshCw className="w-4 h-4 text-blue-400 animate-spin" />
+              <span>数据采集中...</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <BarChart3 className="w-4 h-4 text-purple-400" />
+              <span>技术分析执行中</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <BrainCircuit className="w-4 h-4 text-pink-400" />
+              <span>AI综合研判中</span>
+            </div>
           </div>
         </div>
       </div>
@@ -97,19 +118,27 @@ export default function AnalyzePage({ params }: { params: { symbol: string } }) 
 
   if (error || !data) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">分析失败</h2>
-          <p className="text-gray-600 mb-6">{error || '无法加载分析结果'}</p>
+      <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white flex items-center justify-center relative">
+        {/* 背景装饰 */}
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/4 left-1/3 w-96 h-96 bg-red-500/10 rounded-full blur-3xl animate-pulse"></div>
+        </div>
+
+        <div className="text-center max-w-lg glass-effect rounded-3xl p-12 shadow-2xl relative z-10">
+          <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-orange-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-500/30">
+            <AlertTriangle className="w-10 h-10 text-white" />
+          </div>
+          <h2 className="text-3xl font-bold mb-4">分析失败</h2>
+          <p className="text-white/70 text-lg mb-8">{error || '无法加载分析结果'}</p>
           <button
             onClick={fetchAnalysis}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-full font-semibold transition-colors"
+            className="w-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 text-white px-8 py-4 rounded-xl font-semibold transition-all button-hover flex items-center justify-center gap-3 shadow-lg shadow-purple-500/25 mb-4"
           >
+            <RefreshCw className="w-5 h-5" />
             重新分析
           </button>
-          <Link href="/" className="block mt-4 text-indigo-600 hover:text-indigo-700">
-            <Home className="w-5 h-5 inline mr-2" />
+          <Link href="/" className="block text-white/60 hover:text-white transition-colors flex items-center justify-center gap-2 py-3">
+            <Home className="w-5 h-5" />
             返回首页
           </Link>
         </div>
@@ -118,127 +147,146 @@ export default function AnalyzePage({ params }: { params: { symbol: string } }) 
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white relative">
+      {/* 背景装饰 */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+      </div>
+
       {/* 导航栏 */}
-      <nav className="bg-white shadow-sm">
+      <nav className="glass-effect sticky top-0 z-50 transition-all duration-300">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 text-gray-900 hover:text-indigo-600 transition-colors">
-            <Search className="w-6 h-6" />
+          <Link href="/" className="flex items-center gap-3 text-white hover:text-purple-300 transition-all duration-300 group">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+              <Search className="w-5 h-5 text-white" />
+            </div>
             <span className="font-bold text-xl">股票智能分析</span>
           </Link>
-          <Link 
-            href="/" 
-            className="text-gray-600 hover:text-indigo-600 transition-colors"
+          <Link
+            href="/"
+            className="text-white/60 hover:text-white hover:bg-white/10 transition-all duration-300 p-3 rounded-xl flex items-center gap-2"
           >
             <Home className="w-5 h-5" />
+            <span className="hidden sm:inline">返回首页</span>
           </Link>
         </div>
       </nav>
 
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-8 relative z-10">
         {/* 头部：综合评分 */}
-        <div className="bg-white rounded-3xl shadow-xl p-8 mb-8">
+        <div className="glass-effect rounded-3xl p-8 mb-8 card-hover">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* 左侧：评分和建议 */}
             <div className="lg:col-span-1 text-center">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">{symbol}</h2>
-              
-              <div className="mb-8">
-                <div className="text-7xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+              <h2 className="text-3xl font-bold mb-6">{symbol}</h2>
+
+              <div className="mb-8 transform transition-all duration-300 hover:scale-105">
+                <div className="text-8xl font-bold gradient-text">
                   {data.overallScore.toFixed(1)}
                 </div>
-                <div className="text-gray-600 mt-2 text-lg">综合评分</div>
+                <div className="text-white/60 mt-2 text-lg">综合评分</div>
               </div>
-              
+
               <div className="mb-8">
-                <span className={`inline-block px-8 py-4 rounded-full text-white font-bold text-xl shadow-lg ${
+                <span className={`inline-block px-8 py-4 rounded-full text-white font-bold text-xl shadow-lg transition-all duration-300 hover:shadow-xl transform hover:scale-105 ${
                   data.recommendation === 'strong_buy' ? 'bg-gradient-to-r from-green-500 to-emerald-600' :
                   data.recommendation === 'buy' ? 'bg-gradient-to-r from-green-400 to-green-600' :
                   data.recommendation === 'hold' ? 'bg-gradient-to-r from-yellow-400 to-yellow-600' :
-                  data.recommendation === 'wait' ? 'bg-gradient-to-r from-orange-400 to-orange-600' : 
+                  data.recommendation === 'wait' ? 'bg-gradient-to-r from-orange-400 to-orange-600' :
                   'bg-gradient-to-r from-red-500 to-red-700'
                 }`}>
                   {getRecommendationText(data.recommendation)}
                 </span>
               </div>
 
-              <div className="space-y-3 text-left">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">置信度</span>
-                  <div className="flex items-center gap-2">
-                    <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-indigo-600 rounded-full"
+              <div className="space-y-4 text-left">
+                <div className="flex justify-between items-center bg-white/5 backdrop-blur-sm p-4 rounded-xl border border-white/10">
+                  <span className="text-white/70 font-medium">置信度</span>
+                  <div className="flex items-center gap-3">
+                    <div className="w-32 h-2.5 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full transition-all duration-1000 ease-out"
                         style={{ width: `${data.confidence}%` }}
                       ></div>
                     </div>
-                    <span className="font-semibold text-gray-900 w-12 text-right">{data.confidence.toFixed(0)}%</span>
+                    <span className="font-semibold text-white w-12 text-right">{data.confidence.toFixed(0)}%</span>
                   </div>
                 </div>
                 {data.cached && (
-                  <div className="flex items-center justify-center gap-2 text-sm text-orange-600 bg-orange-50 py-2 rounded-lg">
+                  <div className="flex items-center justify-center gap-2 text-sm text-orange-400 bg-orange-500/10 backdrop-blur-sm py-3 rounded-xl border border-orange-500/20">
                     <Clock className="w-4 h-4" />
                     <span>使用缓存数据（24小时内有效）</span>
                   </div>
                 )}
+                <div className="flex justify-between items-center text-sm text-white/50 border-t border-white/10 pt-4">
+                  <span>分析模型</span>
+                  <span className="font-medium text-white/80">{data.model}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm text-white/50">
+                  <span>处理耗时</span>
+                  <span className="font-medium text-white/80">{data.processingTime?.toFixed(1)}秒</span>
+                </div>
               </div>
             </div>
 
           {/* 右侧：K线图 + AI摘要 */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-8">
             {/* K线图 */}
-            <div className="bg-white rounded-2xl shadow-xl p-6">
-              <StockKLineChart 
-                data={data.klineData || []} 
+            <div className="glass-effect rounded-2xl overflow-hidden card-hover">
+              <StockKLineChart
+                data={data.klineData || []}
                 symbol={data.stockBasic?.symbol || symbol}
               />
             </div>
 
             {/* AI摘要 */}
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
-                <TrendingUp className="w-6 h-6 text-white" />
+            <div className="glass-effect rounded-2xl p-6 border border-purple-500/20 card-hover">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg">
+                  <BrainCircuit className="w-7 h-7 text-white" />
+                </div>
+                <h3 className="text-xl font-bold">AI分析摘要</h3>
               </div>
-              <h3 className="text-xl font-bold text-gray-900">AI分析摘要</h3>
+              <p className="text-white/80 leading-relaxed text-lg">
+                {data.summary}
+              </p>
             </div>
-            <p className="text-gray-700 leading-relaxed text-lg bg-gradient-to-r from-gray-50 to-indigo-50 p-6 rounded-2xl">
-              {data.summary}
-            </p>
           </div>
         </div>
         </div>
 
         {/* 风险和机会 */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <div className="bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200 rounded-3xl p-6 shadow-lg">
-            <h3 className="text-xl font-bold text-red-800 mb-5 flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center">
-                <ArrowDown className="w-6 h-6 text-white" />
+          <div className="glass-effect rounded-3xl p-6 border border-red-500/20 card-hover">
+            <h3 className="text-xl font-bold text-red-400 mb-5 flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg">
+                <ShieldAlert className="w-6 h-6 text-white" />
               </div>
               主要风险
             </h3>
-            <ul className="space-y-3">
+            <ul className="space-y-4">
               {data.risks.map((risk: string, idx: number) => (
-                <li key={idx} className="flex items-start gap-3">
-                  <span className="text-red-500 font-bold mt-1">{idx + 1}.</span>
-                  <span className="text-red-900 leading-relaxed">{risk}</span>
+                <li key={idx} className="flex items-start gap-3 bg-red-500/5 backdrop-blur-sm p-4 rounded-xl border border-red-500/10 transform transition-all duration-200 hover:bg-red-500/10">
+                  <span className="text-red-400 font-bold mt-1 flex-shrink-0">{idx + 1}.</span>
+                  <span className="text-white/80 leading-relaxed">{risk}</span>
                 </li>
               ))}
             </ul>
           </div>
-          
-          <div className="bg-gradient-to-br from-green-50 to-emerald-100 border-2 border-green-200 rounded-3xl p-6 shadow-lg">
-            <h3 className="text-xl font-bold text-green-800 mb-5 flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-600 rounded-xl flex items-center justify-center">
-                <ArrowUp className="w-6 h-6 text-white" />
+
+          <div className="glass-effect rounded-3xl p-6 border border-green-500/20 card-hover">
+            <h3 className="text-xl font-bold text-green-400 mb-5 flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                <Lightbulb className="w-6 h-6 text-white" />
               </div>
               主要机会
             </h3>
-            <ul className="space-y-3">
+            <ul className="space-y-4">
               {data.opportunities.map((opp: string, idx: number) => (
-                <li key={idx} className="flex items-start gap-3">
-                  <span className="text-green-500 font-bold mt-1">{idx + 1}.</span>
-                  <span className="text-green-900 leading-relaxed">{opp}</span>
+                <li key={idx} className="flex items-start gap-3 bg-green-500/5 backdrop-blur-sm p-4 rounded-xl border border-green-500/10 transform transition-all duration-200 hover:bg-green-500/10">
+                  <span className="text-green-400 font-bold mt-1 flex-shrink-0">{idx + 1}.</span>
+                  <span className="text-white/80 leading-relaxed">{opp}</span>
                 </li>
               ))}
             </ul>
@@ -246,49 +294,51 @@ export default function AnalyzePage({ params }: { params: { symbol: string } }) 
         </div>
 
         {/* 多角色详细分析 */}
-        <div className="bg-white rounded-3xl shadow-xl p-8 mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
-              <CheckCircle className="w-6 h-6 text-white" />
+        <div className="glass-effect rounded-3xl p-8 mb-8 card-hover">
+          <h2 className="text-2xl font-bold mb-8 flex items-center gap-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg">
+              <BarChart3 className="w-7 h-7 text-white" />
             </div>
             多角色深度分析
           </h2>
           <div className="space-y-4">
             {data.roleAnalysis.map((role: any) => (
-              <div key={role.role} className="border-2 border-gray-200 rounded-2xl overflow-hidden hover:border-indigo-300 transition-colors">
-                <div 
-                  className="p-5 cursor-pointer hover:bg-gray-50 transition-colors flex items-center justify-between"
+              <div key={role.role} className="border border-white/10 rounded-2xl overflow-hidden hover:border-purple-500/30 transition-all duration-300 shadow-sm hover:shadow-lg">
+                <div
+                  className="p-5 cursor-pointer hover:bg-white/5 transition-colors flex items-center justify-between"
                   onClick={() => toggleRole(role.role)}
                 >
                   <div className="flex items-center gap-4">
-                    <span className={`px-4 py-2 rounded-full text-white text-sm font-bold ${roleColors[role.role]}`}>
+                    <span className={`px-4 py-2 rounded-full text-white text-sm font-bold ${roleColors[role.role]} shadow-md`}>
                       {roleNames[role.role]}
                     </span>
                     <div>
-                      <span className="text-gray-600 mr-3">评分</span>
+                      <span className="text-white/60 mr-3">评分</span>
                       <span className={`text-2xl font-bold ${
-                        role.score >= 80 ? 'text-green-600' :
-                        role.score >= 60 ? 'text-yellow-600' :
-                        role.score >= 40 ? 'text-orange-600' : 'text-red-600'
+                        role.score >= 80 ? 'text-green-400' :
+                        role.score >= 60 ? 'text-yellow-400' :
+                        role.score >= 40 ? 'text-orange-400' : 'text-red-400'
                       }`}>
                         {role.score}
                       </span>
                     </div>
                   </div>
-                  {expandedRoles.has(role.role) ? <ChevronUp className="w-6 h-6 text-gray-400" /> : <ChevronDown className="w-6 h-6 text-gray-400" />}
+                  <div className="transition-transform duration-300">
+                    {expandedRoles.has(role.role) ? <ChevronUp className="w-6 h-6 text-white/40" /> : <ChevronDown className="w-6 h-6 text-white/40" />}
+                  </div>
                 </div>
 
                 {expandedRoles.has(role.role) && (
-                  <div className="p-6 bg-gradient-to-br from-gray-50 to-indigo-50 border-t-2 border-gray-200">
-                    <p className="text-gray-700 leading-relaxed text-lg mb-5">{role.analysis}</p>
-                    <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5 text-indigo-600" />
+                  <div className="p-6 bg-white/5 backdrop-blur-sm border-t border-white/10 animate-fadeIn">
+                    <p className="text-white/80 leading-relaxed text-lg mb-5">{role.analysis}</p>
+                    <h4 className="font-bold mb-3 flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5 text-purple-400" />
                       关键点
                     </h4>
-                    <ul className="space-y-2">
+                    <ul className="space-y-3">
                       {role.keyPoints.map((point: string, idx: number) => (
-                        <li key={idx} className="flex items-start gap-3 text-gray-700">
-                          <span className="text-indigo-600 font-bold mt-0.5">{idx + 1}.</span>
+                        <li key={idx} className="flex items-start gap-3 text-white/80 bg-white/5 backdrop-blur-sm p-3 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
+                          <span className="text-purple-400 font-bold mt-0.5 flex-shrink-0">{idx + 1}.</span>
                           <span className="leading-relaxed">{point}</span>
                         </li>
                       ))}
@@ -301,14 +351,32 @@ export default function AnalyzePage({ params }: { params: { symbol: string } }) 
         </div>
 
         {/* 底部信息 */}
-        <div className="text-center text-gray-500 text-sm pb-8">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Clock className="w-4 h-4" />
-            <span>分析时间：{new Date().toLocaleString('zh-CN')}</span>
+        <div className="text-center glass-effect rounded-2xl p-6 mb-8 border border-white/10">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Clock className="w-4 h-4 text-white/40" />
+            <span className="text-white/60 text-sm">分析时间：{new Date().toLocaleString('zh-CN')}</span>
           </div>
-          <div>分析模型：{data.model}</div>
-          <div>Token使用：输入 {data.tokenUsage?.input?.toLocaleString()} / 输出 {data.tokenUsage?.output?.toLocaleString()}</div>
-          <div>处理耗时：{data.processingTime?.toFixed(1)}秒</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10">
+              <div className="text-white/60 text-sm mb-1">分析模型</div>
+              <div className="text-white font-semibold">{data.model}</div>
+            </div>
+            <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10">
+              <div className="text-white/60 text-sm mb-1">Token使用</div>
+              <div className="text-white font-semibold">
+                输入 {data.tokenUsage?.input?.toLocaleString()} / 输出 {data.tokenUsage?.output?.toLocaleString()}
+              </div>
+            </div>
+            <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10">
+              <div className="text-white/60 text-sm mb-1">处理耗时</div>
+              <div className="text-white font-semibold">{data.processingTime?.toFixed(1)}秒</div>
+            </div>
+          </div>
+          <div className="flex items-center justify-center gap-2 text-xs text-white/40">
+            <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></div>
+            <span>© 2026 股票智能分析系统 | AI驱动的多维度投资决策支持</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></div>
+          </div>
         </div>
       </div>
     </div>

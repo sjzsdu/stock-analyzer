@@ -232,7 +232,7 @@ function generateFallbackAnalysis(symbol: string, market: string) {
     recommendation,
     confidence: 75 + Math.random() * 15,
     summary: `基于多维度分析，${symbol}（${market === 'A' ? 'A股' : market === 'HK' ? '港股' : '美股'}）当前综合评分为${overallScore.toFixed(1)}分。${generateSummaryText(scores, recommendation)}。建议${getRecommendationText(recommendation)}，同时注意控制风险。`,
-    roleAnalysis: generateRoleAnalysis(scores),
+    roleAnalysis: generateRoleAnalysis(scores, market),
     risks: [
       '行业政策变化可能带来监管风险',
       '市场竞争加剧可能影响盈利能力',
@@ -256,7 +256,7 @@ function generateFallbackAnalysis(symbol: string, market: string) {
   };
 }
 
-function generateRoleAnalysis(scores: any) {
+function generateRoleAnalysis(scores: any, market: string) {
   const roleNames = {
     value: '价值投资者',
     technical: '技术分析师',
