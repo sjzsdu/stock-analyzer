@@ -38,13 +38,8 @@ export default function Home() {
     window.location.href = `/analyze/${encodeURIComponent(symbol.trim())}`;
   };
 
-  const popularStocks = [
-    { symbol: '000001', name: '平安银行', market: 'A股' },
-    { symbol: '0700.HK', name: '腾讯控股', market: '港股' },
-    { symbol: 'AAPL', name: '苹果', market: '美股' },
-    { symbol: 'MSFT', name: '微软', market: '美股' },
-    { symbol: 'BABA', name: '阿里巴巴', market: '美股' },
-  ];
+  // 从环境变量获取版本号，默认为开发版本
+  const version = process.env.NEXT_PUBLIC_APP_VERSION || 'Dev';
 
   const features = [
     {
@@ -128,7 +123,7 @@ export default function Home() {
                 <Sparkles className="w-4 h-4 text-yellow-400 animate-pulse" />
                 <span className="font-medium">AI驱动的智能投资分析平台</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
-                <span className="text-green-400">v2.0</span>
+                <span className="text-green-400">{version}</span>
               </div>
             </div>
 
@@ -177,48 +172,18 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-            </div>
-
-            {/* 热门股票 */}
-            <div className="max-w-4xl mx-auto animate-fadeInUp" style={{ animationDelay: '1s' }}>
-              <div className="flex flex-wrap items-center gap-4 justify-center">
-                <span className="text-sm text-white/60 flex items-center gap-2 font-medium">
-                  <Clock className="w-4 h-4" />
-                  热门股票：
-                </span>
-                {popularStocks.map((stock, index) => (
-                  <button
-                    key={stock.symbol}
-                    onClick={() => {
-                      setSymbol(stock.symbol);
-                      window.location.href = `/analyze/${encodeURIComponent(stock.symbol)}`;
-                    }}
-                    className="flex items-center gap-2 bg-white/5 backdrop-blur-xl border border-white/10 px-5 py-2.5 rounded-xl text-sm text-white/80 hover:bg-white/10 hover:border-white/20 hover:text-white transition-all card-hover animate-fadeInUp"
-                    style={{ animationDelay: `${1.2 + index * 0.1}s` }}
-                  >
-                    <Globe className="w-3 h-3 text-purple-400" />
-                    <span className="font-medium">{stock.name}</span>
-                    <span className="text-xs text-white/40 font-mono">({stock.symbol})</span>
-                  </button>
-                ))}
               </div>
-            </div>
 
             {/* 数据展示 */}
-            <div className="flex justify-center gap-8 mt-16 animate-fadeInUp" style={{ animationDelay: '1.2s' }}>
+            <div className="flex justify-center gap-8 mt-16 animate-fadeInUp" style={{ animationDelay: '1s' }}>
               <div className="text-center">
-                <div className="text-4xl font-bold gradient-text">99.9%</div>
-                <div className="text-sm text-white/60 mt-2">分析准确率</div>
-              </div>
-              <div className="w-px bg-white/10"></div>
-              <div className="text-center">
-                <div className="text-4xl font-bold gradient-text">6+</div>
+                <div className="text-4xl font-bold gradient-text">6</div>
                 <div className="text-sm text-white/60 mt-2">专业Agent</div>
               </div>
               <div className="w-px bg-white/10"></div>
               <div className="text-center">
-                <div className="text-4xl font-bold gradient-text">100K+</div>
-                <div className="text-sm text-white/60 mt-2">分析次数</div>
+                <div className="text-4xl font-bold gradient-text">3</div>
+                <div className="text-sm text-white/60 mt-2">支持市场</div>
               </div>
             </div>
           </div>
@@ -387,7 +352,7 @@ export default function Home() {
             {/* 底部信息 */}
             <div className="pt-8 border-t border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="text-sm text-white/50">
-                © 2026 智能投资分析平台 | 保留所有权利
+                © {new Date().getFullYear()} 智能投资分析平台 | 保留所有权利
               </div>
               <div className="flex items-center gap-6 text-sm text-white/50">
                 <a href="#" className="hover:text-white transition-colors">隐私政策</a>

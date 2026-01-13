@@ -117,6 +117,11 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
   }
 
   if (error || !data) {
+    // 检测各种错误类型
+    const isApiKeyError = error.includes('DEEPSEEK_API_KEY') || error.includes('API key') || error.includes('API配置');
+    const isTimeoutError = error.includes('超时') || error.includes('timeout') || error.includes('Timeout');
+    const isNetworkError = error.includes('服务暂时不可用') || error.includes('连接') || error.includes('network');
+    
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white flex items-center justify-center relative">
         {/* 背景装饰 */}
@@ -124,23 +129,72 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
           <div className="absolute top-1/4 left-1/3 w-96 h-96 bg-red-500/10 rounded-full blur-3xl animate-pulse"></div>
         </div>
 
-        <div className="text-center max-w-lg glass-effect rounded-3xl p-12 shadow-2xl relative z-10">
+        <div className="text-center max-w-3xl glass-effect rounded-3xl p-12 shadow-2xl relative z-10 mx-4">
           <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-orange-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-500/30">
             <AlertTriangle className="w-10 h-10 text-white" />
           </div>
-          <h2 className="text-3xl font-bold mb-4">分析失败</h2>
-          <p className="text-white/70 text-lg mb-8">{error || '无法加载分析结果'}</p>
-          <button
-            onClick={fetchAnalysis}
-            className="w-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 text-white px-8 py-4 rounded-xl font-semibold transition-all button-hover flex items-center justify-center gap-3 shadow-lg shadow-purple-500/25 mb-4"
-          >
-            <RefreshCw className="w-5 h-5" />
-            重新分析
-          </button>
-          <Link href="/" className="block text-white/60 hover:text-white transition-colors flex items-center justify-center gap-2 py-3">
-            <Home className="w-5 h-5" />
-            返回首页
-          </Link>
+          <h2 className="text-3xl font-bold mb-4">⚠️ 分析失败</h2>
+          
+          {/* 错误详情 */}
+          <div className="bg-white/5 rounded-xl p-6 mb-6 text-left">
+            <p className="text-white/80 text-sm mb-2">错误信息：</p>
+            <pre className="text-red-400 text-xs font-mono whitespace-pre-wrap break-all bg-black/20 rounded-lg p-4 max-h-48 overflow-auto">
+{error || '无法加载分析结果'}
+            </pre>
+          </div>
+          
+          {/* 快速诊断 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div className="bg-white/5 rounded-xl p-4 text-left">
+              <h4 className="text-white/60 text-sm mb-2">🔍 快速检查</h4>
+              <ul className="text-white/70 text-xs space-y-1">
+                <li>• 服务健康: <a href="http://localhost:8000/health" target="_blank" className="text-blue-400 hover:underline">点击测试</a></li>
+                <li>• API 文档: <a href="http://localhost:8000/docs" target="_blank" className="text-blue-400 hover:underline">点击查看</a></li>
+              </ul>
+            </div>
+            
+            <div className="bg-white/5 rounded-xl p-4 text-left">
+              <h4 className="text-white/60 text-sm mb-2">💡 常见解决方案</h4>
+              <ul className="text-white/70 text-xs space-y-1">
+                {isTimeoutError && <li>• AI分析需要2-5分钟，请耐心等待</li>}
+                {isNetworkError && <li>• 检查 Python 服务是否启动</li>}
+                {!isApiKeyError && <li>• 点击"重新分析"重试</li>}
+                <li>• 返回首页重新搜索</li>
+              </ul>
+            </div>
+          </div>
+          
+          {/* API Key 配置帮助 */}
+          {isApiKeyError && (
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-6 mb-6 text-left">
+              <h3 className="text-blue-400 font-semibold mb-3 flex items-center gap-2">
+                <span className="text-xl">⚙️</span> AI服务配置
+              </h3>
+              <p className="text-white/80 text-sm mb-4">
+                系统需要配置 DeepSeek API Key 才能进行 AI 分析。
+              </p>
+              <div className="bg-black/30 rounded-lg p-4 font-mono text-xs text-blue-300 space-y-2">
+                <p>1. 申请 API Key: <a href="https://platform.deepseek.com/" target="_blank" className="text-blue-400 hover:underline">https://platform.deepseek.com/</a></p>
+                <p>2. 编辑文件: <code className="text-yellow-400">python-service/.env</code></p>
+                <p>3. 设置: <code className="text-yellow-400">DEEPSEEK_API_KEY=sk-xxx</code></p>
+                <p>4. 重启 Python 服务</p>
+              </div>
+            </div>
+          )}
+          
+          <div className="flex flex-col gap-4">
+            <button
+              onClick={fetchAnalysis}
+              className="w-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 text-white px-8 py-4 rounded-xl font-semibold transition-all button-hover flex items-center justify-center gap-3 shadow-lg shadow-purple-500/25"
+            >
+              <RefreshCw className="w-5 h-5" />
+              重新分析
+            </button>
+            <Link href="/" className="text-white/60 hover:text-white transition-colors flex items-center justify-center gap-2 py-3">
+              <Home className="w-5 h-5" />
+              返回首页
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -372,11 +426,11 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
               <div className="text-white font-semibold">{data.processingTime?.toFixed(1)}秒</div>
             </div>
           </div>
-          <div className="flex items-center justify-center gap-2 text-xs text-white/40">
-            <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></div>
-            <span>© 2026 股票智能分析系统 | AI驱动的多维度投资决策支持</span>
-            <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></div>
-          </div>
+           <div className="flex items-center justify-center gap-2 text-xs text-white/40">
+             <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></div>
+             <span>© {new Date().getFullYear()} 股票智能分析系统 | AI驱动的多维度投资决策支持</span>
+             <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></div>
+           </div>
         </div>
       </div>
     </div>
