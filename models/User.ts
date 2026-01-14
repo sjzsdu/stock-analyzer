@@ -15,7 +15,20 @@ export interface IUser extends Document {
   password?: string;  // 添加密码字段
   image?: string;
   emailVerified?: Date;
-  
+
+  // 邮箱验证状态
+  emailVerification?: {
+    token: string;
+    expiresAt: Date;
+    verifiedAt?: Date;
+  };
+
+  // 密码重置状态
+  passwordReset?: {
+    token: string;
+    expiresAt: Date;
+  };
+
   // OAuth提供商信息
   accounts?: {
     provider: string;
@@ -83,7 +96,35 @@ const UserSchema = new Schema<IUser>(
       type: Date,
       default: null,
     },
-    
+
+    // 邮箱验证状态
+    emailVerification: {
+      token: {
+        type: String,
+        default: null,
+      },
+      expiresAt: {
+        type: Date,
+        default: null,
+      },
+      verifiedAt: {
+        type: Date,
+        default: null,
+      },
+    },
+
+    // 密码重置状态
+    passwordReset: {
+      token: {
+        type: String,
+        default: null,
+      },
+      expiresAt: {
+        type: Date,
+        default: null,
+      },
+    },
+
     // OAuth账户信息
     accounts: [{
       provider: {

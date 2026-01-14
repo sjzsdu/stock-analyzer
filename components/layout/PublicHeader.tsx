@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useState, useEffect, useRef } from 'react';
-import { TrendingUp, Menu, X } from 'lucide-react';
+import { useSession, signOut } from 'next-auth/react';
+import { TrendingUp, Menu, X, User, Settings, LogOut, ChevronDown } from 'lucide-react';
 
 interface PublicHeaderProps {
   currentPath?: string;
@@ -11,7 +12,9 @@ interface PublicHeaderProps {
 export default function PublicHeader({ currentPath = '/' }: PublicHeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
+  const { data: session, status } = useSession();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -33,6 +36,11 @@ export default function PublicHeader({ currentPath = '/' }: PublicHeaderProps) {
     if (href === '/') return currentPath === '/';
     return currentPath.startsWith(href);
   };
+
+  const userLinks = [
+    { href: '/history', label: '分析历史', icon: TrendingUp },
+    { href: '/settings', label: '账户设置', icon: Settings },
+  ];
 
   return (
     <header
@@ -73,21 +81,82 @@ export default function PublicHeader({ currentPath = '/' }: PublicHeaderProps) {
             ))}
           </nav>
 
-          {/* CTA Buttons */}
-          <div className="hidden md:flex items-center gap-4">
-            <Link
-              href="/auth/signin"
-              className="text-white/70 hover:text-white transition-colors text-sm font-medium px-4 py-2"
-            >
-              登录
-            </Link>
-            <Link
-              href="/auth/signup"
-              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-lg font-medium transition-all button-hover shadow-lg shadow-purple-500/20 text-sm"
-            >
-              免费注册
-            </Link>
-          </div>
+          {/* Authenticated User Menu */}
+          {status === 'authenticated' && session?.user ? (
+            <div className="hidden md:flex items-center gap-4 relative">
+              <Link
+                href="/history"
+                className="text-white/70 hover:text-white text-sm font-medium px-4 py-2"
+              >
+                分析历史
+              </Link>
+              <Link
+                href="/settings"
+                className="text-white/70 hover:text-white text-sm font-medium px-4 py-2"
+              >
+                设置
+              </Link>
+              
+              {/* User Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
+                >
+                  <User className="w-4 h-4" />
+                  <span className="text-sm font-medium">{session.user.name || session.user.email}</span>
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+                
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-[#1a1f2e] rounded-xl shadow-xl border border-white/10 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-white/10">
+                      <p className="text-sm font-medium text-white">{session.user.name || '用户'}</p>
+                      <p className="text-xs text-white/50 truncate">{session.user.email}</p>
+                    </div>
+                    <div className="py-2">
+                      {userLinks.map((link) => (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          onClick={() => setIsUserMenuOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2 text-sm text-white/70 hover:bg-white/5 hover:text-white transition-colors"
+                        >
+                          <link.icon className="w-4 h-4" />
+                          {link.label}
+                        </Link>
+                      ))}
+                    </div>
+                    <div className="border-t border-white/10 py-2">
+                      <button
+                        onClick={() => signOut({ callbackUrl: '/' })}
+                        className="flex items-center gap-3 w-full px-4 py-2 text-sm text-red-400 hover:bg-white/5 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        退出登录
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Unauthenticated Buttons */
+            <div className="hidden md:flex items-center gap-4">
+              <Link
+                href="/auth/signin"
+                className="text-white/70 hover:text-white transition-colors text-sm font-medium px-4 py-2"
+              >
+                登录
+              </Link>
+              <Link
+                href="/auth/signup"
+                className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-lg font-medium transition-all button-hover shadow-lg shadow-purple-500/20 text-sm"
+              >
+                免费注册
+              </Link>
+            </div>
+          )}
 
           {/* Mobile Menu Button */}
           <button
@@ -116,22 +185,54 @@ export default function PublicHeader({ currentPath = '/' }: PublicHeaderProps) {
                   {link.label}
                 </Link>
               ))}
-              <div className="pt-4 flex flex-col gap-3">
-                <Link
-                  href="/auth/signin"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="text-center py-3 rounded-lg border border-white/20 text-white/80 hover:bg-white/5 transition-colors"
-                >
-                  登录
-                </Link>
-                <Link
-                  href="/auth/signup"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="text-center py-3 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium"
-                >
-                  免费注册
-                </Link>
-              </div>
+              
+              {status === 'authenticated' ? (
+                <>
+                  <div className="pt-4 border-t border-white/10">
+                    <p className="px-4 py-2 text-sm text-white/50">
+                      {session?.user?.email}
+                    </p>
+                  </div>
+                  {userLinks.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 text-white/70 hover:bg-white/5 rounded-lg transition-colors"
+                    >
+                      <link.icon className="w-5 h-5" />
+                      {link.label}
+                    </Link>
+                  ))}
+                  <button
+                    onClick={() => {
+                      signOut({ callbackUrl: '/' });
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 text-red-400 hover:bg-white/5 rounded-lg transition-colors"
+                  >
+                    <LogOut className="w-5 h-5" />
+                    退出登录
+                  </button>
+                </>
+              ) : (
+                <div className="pt-4 flex flex-col gap-3">
+                  <Link
+                    href="/auth/signin"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="text-center py-3 rounded-lg border border-white/20 text-white/80 hover:bg-white/5 transition-colors"
+                  >
+                    登录
+                  </Link>
+                  <Link
+                    href="/auth/signup"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="text-center py-3 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium"
+                  >
+                    免费注册
+                  </Link>
+                </div>
+              )}
             </nav>
           </div>
         )}

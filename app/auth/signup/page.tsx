@@ -64,9 +64,7 @@ export default function SignUpPage() {
         setError(result.error || '注册失败，请重试');
       } else {
         setSuccess(true);
-        setTimeout(() => {
-          router.push('/auth/signin?registered=true');
-        }, 3000);
+        setRegisteredEmail(data.email);
       }
     } catch (err) {
       setError('注册失败，请稍后重试');
@@ -74,25 +72,36 @@ export default function SignUpPage() {
       setIsLoading(false);
     }
   };
+
+  const [registeredEmail, setRegisteredEmail] = useState('');
   
   if (success) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
         <div className="w-full max-w-md text-center">
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="w-10 h-10 text-green-500" />
+            <Mail className="w-10 h-10 text-green-500" />
           </div>
           <h1 className="text-2xl font-bold text-gray-800 mb-4">注册成功！</h1>
-          <p className="text-gray-600 mb-6">
-            您的账户已创建成功，即将跳转到登录页面...
+          <p className="text-gray-600 mb-4">
+            我们已向 <span className="font-medium text-indigo-600">{registeredEmail}</span> 发送了验证邮件
+          </p>
+          <p className="text-gray-500 text-sm mb-8">
+            请点击邮件中的链接验证您的邮箱，24小时内有效
           </p>
           <Link 
-            href="/auth/signin?registered=true"
+            href="/auth/signin"
             className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-xl hover:from-indigo-600 hover:to-purple-700 transition-all"
           >
-            立即登录
+            去登录
             <ArrowRight className="w-5 h-5" />
           </Link>
+          <p className="mt-6 text-sm text-gray-500">
+            没有收到邮件？{' '}
+            <Link href="/auth/verify-email" className="text-indigo-600 hover:text-indigo-700 font-medium">
+              重新发送
+            </Link>
+          </p>
         </div>
       </div>
     );

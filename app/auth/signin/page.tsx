@@ -172,6 +172,16 @@ function SignInForm() {
           </button>
         </form>
         
+        {/* 忘记密码链接 */}
+        <div className="text-right mt-2">
+          <Link 
+            href="/auth/forgot-password" 
+            className="text-sm text-indigo-600 hover:text-indigo-700"
+          >
+            忘记密码？
+          </Link>
+        </div>
+        
         {/* 注册链接 */}
         <p className="text-center text-gray-600 mt-6">
           还没有账户？{' '}

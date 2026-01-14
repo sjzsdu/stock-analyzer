@@ -95,10 +95,10 @@ export const authOptions: NextAuthOptions = {
           throw new Error('请输入邮箱和密码');
         }
         
-        // 查找用户
+        // 查找用户（需要显式选择 password 字段，因为默认 select: false）
         const user = await User.findOne({ 
           email: credentials.email.toLowerCase() 
-        }) as IUser | null;
+        }).select('+password') as IUser | null;
         
         if (!user) {
           throw new Error('用户不存在');

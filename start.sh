@@ -73,25 +73,34 @@ PYTHON_PID=$!
 cd ..
 
 # 等待并验证 Python 服务启动
-sleep 3
+log_info "等待 Python 服务启动 (PID: $PYTHON_PID)..."
+sleep 5
 if ! kill -0 $PYTHON_PID 2>/dev/null; then
     log_error "Python 服务启动失败"
+    log_info "查看 Python 服务日志:"
     cat logs/python-service.log
     exit 1
+else
+    log_success "Python 服务已启动 (PID: $PYTHON_PID)"
 fi
 
 # 验证 Python 服务健康检查
-for i in {1..5}; do
-    if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+log_info "开始 Python 服务健康检查..."
+for i in {1..10}; do
+    log_info "健康检查尝试 $i/10..."
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health | grep -q "200"; then
         log_success "Python 服务健康检查通过"
         break
     fi
-    if [ $i -eq 5 ]; then
+    if [ $i -eq 10 ]; then
         log_error "Python 服务健康检查失败"
+        log_info "查看 Python 服务日志:"
+        cat logs/python-service.log
         kill $PYTHON_PID 2>/dev/null || true
         exit 1
     fi
-    sleep 1
+    log_info "等待 2 秒后重试..."
+    sleep 2
 done
 
 # 启动 Next.js 开发服务器 (前端)
