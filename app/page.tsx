@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { 
-  Search, ArrowRight, Sparkles, Zap, BarChart3, BrainCircuit, 
+import Link from 'next/link';
+import {
+  Search, ArrowRight, Sparkles, Zap, BarChart3, BrainCircuit,
   Globe, TrendingUp, ShieldAlert, RefreshCw, ChevronRight,
   Clock, Target, LineChart, Database, Award
 } from 'lucide-react';
@@ -102,12 +103,13 @@ export default function Home() {
               </div>
             </div>
             <nav className="hidden md:flex items-center gap-8 text-sm font-medium">
-              <a href="#" className="text-white/90 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-all">首页</a>
-              <a href="#" className="text-white/70 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-all">功能</a>
-              <a href="#" className="text-white/70 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-all">关于我们</a>
-              <a href="#" className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-5 py-2 rounded-lg font-medium transition-all button-hover">
-                开始使用
-              </a>
+              <Link href="/" className="text-white/90 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-all">首页</Link>
+              <Link href="/features" className="text-white/70 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-all">功能</Link>
+              <Link href="/pricing" className="text-white/70 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-all">定价</Link>
+              <Link href="/about" className="text-white/70 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-all">关于我们</Link>
+              <Link href="/auth/signup" className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-5 py-2 rounded-lg font-medium transition-all button-hover">
+                免费注册
+              </Link>
             </nav>
           </div>
         </div>
@@ -189,7 +191,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 特性区域 */}
+                {/* 特性区域 */}
         <section className="py-32 relative">
           <div className="container mx-auto px-4">
             <div className="text-center mb-16">
@@ -207,7 +209,7 @@ export default function Home() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {features.map((feature, index) => (
-                <div 
+                <div
                   key={feature.title}
                   className="group glass-effect rounded-3xl p-8 card-hover animate-fadeInUp"
                   style={{ animationDelay: `${0.5 + index * 0.1}s` }}
@@ -217,10 +219,10 @@ export default function Home() {
                   </div>
                   <h3 className="text-2xl font-bold mb-4 text-white group-hover:text-purple-300 transition-colors">{feature.title}</h3>
                   <p className="text-white/60 mb-6 leading-relaxed">{feature.description}</p>
-                  <a href="#" className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 font-medium transition-colors group-hover:gap-3">
+                  <Link href="/features" className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 font-medium transition-colors group-hover:gap-3">
                     <span>了解更多</span>
                     <ChevronRight className="w-4 h-4" />
-                  </a>
+                  </Link>
                 </div>
               ))}
             </div>
@@ -330,10 +332,10 @@ export default function Home() {
               <div>
                 <h4 className="text-white font-semibold mb-4">快速链接</h4>
                 <ul className="space-y-3">
-                  <li><a href="#" className="text-white/60 hover:text-white transition-colors text-sm">首页</a></li>
-                  <li><a href="#" className="text-white/60 hover:text-white transition-colors text-sm">功能介绍</a></li>
-                  <li><a href="#" className="text-white/60 hover:text-white transition-colors text-sm">关于我们</a></li>
-                  <li><a href="#" className="text-white/60 hover:text-white transition-colors text-sm">使用指南</a></li>
+                  <li><Link href="/" className="text-white/60 hover:text-white transition-colors text-sm">首页</Link></li>
+                  <li><Link href="/features" className="text-white/60 hover:text-white transition-colors text-sm">功能介绍</Link></li>
+                  <li><Link href="/pricing" className="text-white/60 hover:text-white transition-colors text-sm">订阅方案</Link></li>
+                  <li><Link href="/about" className="text-white/60 hover:text-white transition-colors text-sm">关于我们</Link></li>
                 </ul>
               </div>
 
@@ -341,7 +343,7 @@ export default function Home() {
               <div>
                 <h4 className="text-white font-semibold mb-4">支持与帮助</h4>
                 <ul className="space-y-3">
-                  <li><a href="#" className="text-white/60 hover:text-white transition-colors text-sm">帮助中心</a></li>
+                  <li><Link href="/docs" className="text-white/60 hover:text-white transition-colors text-sm">帮助中心</Link></li>
                   <li><a href="#" className="text-white/60 hover:text-white transition-colors text-sm">常见问题</a></li>
                   <li><a href="#" className="text-white/60 hover:text-white transition-colors text-sm">联系我们</a></li>
                   <li><a href="#" className="text-white/60 hover:text-white transition-colors text-sm">反馈建议</a></li>
