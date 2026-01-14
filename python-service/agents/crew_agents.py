@@ -1,11 +1,17 @@
 """
 CrewAI多Agent分析模块
 使用 CrewAI 内置的 LLM 配置方式
+集成增强版分析Prompt模板
 """
 
 import os
 import litellm
 from typing import Dict, Any, List, Optional
+from .enhanced_prompts import (
+    get_agent_prompt,
+    parse_analysis_output,
+    format_analysis_result,
+)
 
 
 def get_llm_config(temperature: float = 0.7) -> Dict[str, Any]:
@@ -162,108 +168,6 @@ def run_crew_analysis(symbol: str, stock_data: dict) -> dict:
         raise
 
 
-def create_tasks(
-    symbol: str, stock_data: dict, agents: list, data_summary: str, kline_summary: str
-):
-    """创建分析任务"""
-    from crewai import Task
-
-    (
-        value_agent,
-        technical_agent,
-        growth_agent,
-        fundamental_agent,
-        risk_agent,
-        macro_agent,
-        synthesizer,
-    ) = agents
-
-    return [
-        Task(
-            description=f"""Analyze {symbol} from a value investing perspective.
-
-Stock Data:
-{data_summary}
-
-Provide:
-- Detailed analysis (300-500 words)
-- Score from 0-100
-- 3-5 key bullet points""",
-            expected_output="Value analysis with score and key insights",
-            agent=value_agent,
-        ),
-        Task(
-            description=f"""Analyze {symbol} technical indicators.
-
-K-line data:
-{kline_summary}
-
-Provide:
-- Detailed analysis (300-500 words)
-- Score from 0-100
-- 3-5 key bullet points""",
-            expected_output="Technical analysis with score and key insights",
-            agent=technical_agent,
-        ),
-        Task(
-            description=f"""Analyze {symbol} growth potential.
-
-Provide:
-- Detailed analysis (300-500 words)
-- Score from 0-100
-- 3-5 key bullet points""",
-            expected_output="Growth analysis with score and key insights",
-            agent=growth_agent,
-        ),
-        Task(
-            description=f"""Analyze {symbol} fundamentals.
-
-Provide:
-- Detailed analysis (300-500 words)
-- Score from 0-100
-- 3-5 key bullet points""",
-            expected_output="Fundamental analysis with score and key insights",
-            agent=fundamental_agent,
-        ),
-        Task(
-            description=f"""Identify all risks for {symbol}.
-
-Provide:
-- Detailed analysis (300-500 words)
-- Score from 0-100 (higher = lower risk)
-- 3-5 key risk points""",
-            expected_output="Risk analysis with score and key risk points",
-            agent=risk_agent,
-        ),
-        Task(
-            description=f"""Analyze macroeconomic impact on {symbol}.
-
-Provide:
-- Detailed analysis (300-500 words)
-- Score from 0-100
-- 3-5 key bullet points""",
-            expected_output="Macro analysis with score and key insights",
-            agent=macro_agent,
-        ),
-        Task(
-            description=f"""Synthesize all analyses for {symbol} into a JSON recommendation.
-
-Calculate weighted overall score (0-100):
-- Value: 25%, Technical: 15%, Growth: 20%
-- Fundamental: 15%, Risk: 15%, Macro: 10%
-
-Recommendation:
-- 81-100: Strong Buy, 76-80: Buy, 61-75: Hold
-- 51-60: Wait, 0-50: Sell
-
-Provide JSON:
-{{"overallScore": 0-100, "recommendation": "...", "confidence": 0-100, "summary": "...", "risks": [], "opportunities": []}}""",
-            expected_output="JSON with overallScore, recommendation, confidence, summary, risks, opportunities",
-            agent=synthesizer,
-        ),
-    ]
-
-
 def format_data_summary(stock_data: dict) -> str:
     """格式化股票数据摘要"""
     basic = stock_data.get("basic", {})
@@ -286,14 +190,282 @@ def format_kline_summary(kline: list) -> str:
     )
 
 
+def format_financial_data(stock_data: dict) -> str:
+    """格式化财务数据"""
+    financial = stock_data.get("financial", {})
+    if not financial:
+        return "财务数据: 暂无"
+
+    return f"""
+财务指标:
+- ROE: {financial.get("roe", "N/A")}%
+- 净利率: {financial.get("netMargin", "N/A")}%
+- 毛利率: {financial.get("grossMargin", "N/A")}%
+- 资产负债率: {financial.get("debtRatio", "N/A")}%
+- 流动比率: {financial.get("currentRatio", "N/A")}
+- 营收增长: {financial.get("revenueGrowth", "N/A")}%
+- 净利润增长: {financial.get("profitGrowth", "N/A")}%
+- PE: {stock_data.get("basic", {}).get("peRatio", "N/A")}
+- PB: {stock_data.get("basic", {}).get("pbRatio", "N/A")}
+"""
+
+
+def format_industry_data(stock_data: dict) -> str:
+    """格式化行业数据"""
+    basic = stock_data.get("basic", {})
+    industry = basic.get("industry", "N/A")
+    sector = basic.get("sector", "N/A")
+
+    return f"""
+行业信息:
+- 行业: {industry}
+- 板块: {sector}
+- 概念标签: {", ".join(basic.get("conceptTags", []))}
+"""
+
+
+def create_tasks(
+    symbol: str, stock_data: dict, agents: list, data_summary: str, kline_summary: str
+):
+    """创建分析任务 - 使用增强版Prompt模板"""
+    from crewai import Task
+
+    (
+        value_agent,
+        technical_agent,
+        growth_agent,
+        fundamental_agent,
+        risk_agent,
+        macro_agent,
+        synthesizer,
+    ) = agents
+
+    # 获取股票基本信息
+    stock_name = stock_data.get("basic", {}).get("name", symbol)
+
+    # 准备数据上下文
+    data_context = f"""
+股票数据摘要:
+{data_summary}
+
+K线数据摘要:
+{kline_summary}
+
+财务数据:
+{format_financial_data(stock_data)}
+
+行业数据:
+{format_industry_data(stock_data)}
+"""
+
+    return [
+        Task(
+            description=get_agent_prompt("value", stock_name, symbol)
+            + f"""
+
+数据上下文:
+{data_context}
+
+请严格按照模板格式输出估值分析结果。""",
+            expected_output="完整的估值分析报告，包含DCF、相对估值、置信度评估等",
+            agent=value_agent,
+        ),
+        Task(
+            description=get_agent_prompt("technical", stock_name, symbol)
+            + f"""
+
+数据上下文:
+{data_context}
+
+请严格按照模板格式输出技术分析结果。""",
+            expected_output="完整的技术分析报告，包含趋势、价位、指标、形态分析等",
+            agent=technical_agent,
+        ),
+        Task(
+            description=get_agent_prompt("growth", stock_name, symbol)
+            + f"""
+
+数据上下文:
+{data_context}
+
+请严格按照模板格式输出成长分析结果。""",
+            expected_output="完整的成长分析报告，包含历史增长、质量评估、可持续性等",
+            agent=growth_agent,
+        ),
+        Task(
+            description=get_agent_prompt("fundamental", stock_name, symbol)
+            + f"""
+
+数据上下文:
+{data_context}
+
+请严格按照模板格式输出基本面分析结果。""",
+            expected_output="完整的基本面分析报告，包含盈利能力、运营效率、资产质量等",
+            agent=fundamental_agent,
+        ),
+        Task(
+            description=get_agent_prompt("risk", stock_name, symbol)
+            + f"""
+
+数据上下文:
+{data_context}
+
+请严格按照模板格式输出风险评估结果。""",
+            expected_output="完整的风险评估报告，包含市场风险、行业风险、公司特有风险等",
+            agent=risk_agent,
+        ),
+        Task(
+            description=get_agent_prompt("macro", stock_name, symbol)
+            + f"""
+
+数据上下文:
+{data_context}
+
+请严格按照模板格式输出宏观分析结果。""",
+            expected_output="完整的宏观分析报告，包含经济周期、利率、通胀、政策影响等",
+            agent=macro_agent,
+        ),
+        Task(
+            description=get_agent_prompt("synthesizer", stock_name, symbol)
+            + """
+
+请基于以上各Agent的分析结果，综合形成最终投资建议。
+
+要求：
+1. 整合所有维度的分析结果
+2. 计算加权综合评分
+3. 识别一致性和分歧点
+4. 给出明确的推荐操作
+5. 严格按照模板格式输出
+
+请严格按照模板格式输出综合分析报告。""",
+            expected_output="完整的综合分析报告，包含执行摘要、各维度评分、核心逻辑、操作建议等",
+            agent=synthesizer,
+        ),
+    ]
+
+    return [
+        Task(
+            description=get_agent_prompt("value", stock_name, symbol)
+            + f"""
+
+数据上下文:
+{data_context}
+
+请严格按照模板格式输出估值分析结果。""",
+            expected_output="完整的估值分析报告，包含DCF、相对估值、置信度评估等",
+            agent=value_agent,
+        ),
+        Task(
+            description=get_agent_prompt("technical", stock_name, symbol)
+            + f"""
+
+数据上下文:
+{data_context}
+
+请严格按照模板格式输出技术分析结果。""",
+            expected_output="完整的技术分析报告，包含趋势、价位、指标、形态分析等",
+            agent=technical_agent,
+        ),
+        Task(
+            description=get_agent_prompt("growth", stock_name, symbol)
+            + f"""
+
+数据上下文:
+{data_context}
+
+请严格按照模板格式输出成长分析结果。""",
+            expected_output="完整的成长分析报告，包含历史增长、质量评估、可持续性等",
+            agent=growth_agent,
+        ),
+        Task(
+            description=get_agent_prompt("fundamental", stock_name, symbol)
+            + f"""
+
+数据上下文:
+{data_context}
+
+请严格按照模板格式输出基本面分析结果。""",
+            expected_output="完整的基本面分析报告，包含盈利能力、运营效率、资产质量等",
+            agent=fundamental_agent,
+        ),
+        Task(
+            description=get_agent_prompt("risk", stock_name, symbol)
+            + f"""
+
+数据上下文:
+{data_context}
+
+请严格按照模板格式输出风险评估结果。""",
+            expected_output="完整的风险评估报告，包含市场风险、行业风险、公司特有风险等",
+            agent=risk_agent,
+        ),
+        Task(
+            description=get_agent_prompt("macro", stock_name, symbol)
+            + f"""
+
+数据上下文:
+{data_context}
+
+请严格按照模板格式输出宏观分析结果。""",
+            expected_output="完整的宏观分析报告，包含经济周期、利率、通胀、政策影响等",
+            agent=macro_agent,
+        ),
+        Task(
+            description=get_agent_prompt("synthesizer", stock_name, symbol)
+            + """
+
+请基于以上各Agent的分析结果，综合形成最终投资建议。
+
+要求：
+1. 整合所有维度的分析结果
+2. 计算加权综合评分
+3. 识别一致性和分歧点
+4. 给出明确的推荐操作
+5. 严格按照模板格式输出
+
+请严格按照模板格式输出综合分析报告。""",
+            expected_output="完整的综合分析报告，包含执行摘要、各维度评分、核心逻辑、操作建议等",
+            agent=synthesizer,
+        ),
+    ]
+
+
 def parse_analysis_result(result, symbol: str, stock_data: dict) -> dict:
-    """解析分析结果"""
+    """解析分析结果 - 使用增强版解析"""
     import json
     import re
 
     output = str(result)
-    json_match = re.search(r"\{[\s\S]*\}", output)
 
+    # 尝试从输出中提取各Agent的结果
+    agent_outputs = []
+
+    # 查找各Agent的输出部分
+    agent_sections = {
+        "value": r"## 估值分析\s*([\s\S]*?)(?=##|\Z)",
+        "technical": r"## 技术分析\s*([\s\S]*?)(?=##|\Z)",
+        "growth": r"## 成长分析\s*([\s\S]*?)(?=##|\Z)",
+        "fundamental": r"## 基本面分析\s*([\s\S]*?)(?=##|\Z)",
+        "risk": r"## 风险评估\s*([\s\S]*?)(?=##|\Z)",
+        "macro": r"## 宏观分析\s*([\s\S]*?)(?=##|\Z)",
+    }
+
+    stock_name = stock_data.get("basic", {}).get("name", symbol)
+
+    for agent_type, pattern in agent_sections.items():
+        match = re.search(pattern, output, re.MULTILINE)
+        if match:
+            agent_output = match.group(1).strip()
+            parsed = parse_analysis_output(agent_type, agent_output)
+            agent_outputs.append(parsed)
+
+    # 如果找到了结构化输出，使用增强版格式化
+    if agent_outputs:
+        return format_analysis_result(agent_outputs, symbol, stock_name)
+
+    # 回退到原有解析逻辑
+    json_match = re.search(r"\{[\s\S]*\}", output)
     if json_match:
         try:
             analysis = json.loads(json_match.group())

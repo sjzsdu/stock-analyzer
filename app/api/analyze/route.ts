@@ -24,11 +24,11 @@ export async function POST(request: NextRequest) {
     // 连接数据库
     await connectDB();
     
-    // 检查是否已有分析结果（1小时内）
+    // 检查是否已有分析结果（24小时内）
     const existing = await StockAnalysis.findOne({
       symbol: symbolStr,
       market: market,
-      createdAt: { $gte: new Date(Date.now() - 60*60*1000) }
+      createdAt: { $gte: new Date(Date.now() - 24*60*60*1000) }
     });
     
     if (existing) {
@@ -122,14 +122,29 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // 保存分析结果
+    // 保存分析结果 - 支持增强版分析结构
     const finalAnalysis = {
       ...analysisData,
       symbol: symbolStr,
       market,
+      stockName: stockData.basic?.name || symbolStr,
       klineData: stockData.kline || [],
       stockBasic: stockData.basic || null,
-      createdAt: new Date()
+      createdAt: new Date(),
+      // 确保向后兼容：如果有agentResults，转换为旧格式
+      ...(analysisData.agentResults ? {
+        // 保持向后兼容的字段
+        confidence: analysisData.confidenceScore || analysisData.confidence || 75,
+        summary: analysisData.executiveSummary || analysisData.summary || '',
+        roleAnalysis: analysisData.agentResults.map((agent: any) => ({
+          role: agent.agent,
+          score: agent.score,
+          analysis: agent.summary || '',
+          keyPoints: agent.key_factors || []
+        })),
+        risks: analysisData.agentResults.flatMap((agent: any) => agent.risks || []),
+        opportunities: [] // 可以通过agentResults中的key_factors推导
+      } : {})
     };
     
     try {

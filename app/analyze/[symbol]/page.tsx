@@ -3,6 +3,7 @@ import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import { ArrowUp, ArrowDown, TrendingUp, AlertTriangle, CheckCircle, Clock, Home, ChevronDown, ChevronUp, Search, RefreshCw, BarChart3, ShieldAlert, Lightbulb, BrainCircuit } from 'lucide-react';
 import StockKLineChart from '@/components/StockKLineChart';
+import EnhancedAnalysisReport from '@/components/analysis/EnhancedAnalysisReport';
 
 const roleNames: any = {
   value: '价值投资者',
@@ -255,18 +256,18 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
               </div>
 
               <div className="space-y-4 text-left">
-                <div className="flex justify-between items-center bg-white/5 backdrop-blur-sm p-4 rounded-xl border border-white/10">
-                  <span className="text-white/70 font-medium">置信度</span>
-                  <div className="flex items-center gap-3">
-                    <div className="w-32 h-2.5 bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full transition-all duration-1000 ease-out"
-                        style={{ width: `${data.confidence}%` }}
-                      ></div>
-                    </div>
-                    <span className="font-semibold text-white w-12 text-right">{data.confidence.toFixed(0)}%</span>
-                  </div>
-                </div>
+                 <div className="flex justify-between items-center bg-white/5 backdrop-blur-sm p-4 rounded-xl border border-white/10">
+                   <span className="text-white/70 font-medium">置信度</span>
+                   <div className="flex items-center gap-3">
+                     <div className="w-32 h-2.5 bg-white/10 rounded-full overflow-hidden">
+                       <div
+                         className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full transition-all duration-1000 ease-out"
+                         style={{ width: `${data.confidenceScore || data.confidence}%` }}
+                       ></div>
+                     </div>
+                     <span className="font-semibold text-white w-12 text-right">{(data.confidenceScore || data.confidence).toFixed(0)}%</span>
+                   </div>
+                 </div>
                 {data.cached && (
                   <div className="flex items-center justify-center gap-2 text-sm text-orange-400 bg-orange-500/10 backdrop-blur-sm py-3 rounded-xl border border-orange-500/20">
                     <Clock className="w-4 h-4" />
@@ -355,53 +356,68 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
             </div>
             多角色深度分析
           </h2>
-          <div className="space-y-4">
-            {data.roleAnalysis.map((role: any) => (
-              <div key={role.role} className="border border-white/10 rounded-2xl overflow-hidden hover:border-purple-500/30 transition-all duration-300 shadow-sm hover:shadow-lg">
-                <div
-                  className="p-5 cursor-pointer hover:bg-white/5 transition-colors flex items-center justify-between"
-                  onClick={() => toggleRole(role.role)}
-                >
-                  <div className="flex items-center gap-4">
-                    <span className={`px-4 py-2 rounded-full text-white text-sm font-bold ${roleColors[role.role]} shadow-md`}>
-                      {roleNames[role.role]}
-                    </span>
-                    <div>
-                      <span className="text-white/60 mr-3">评分</span>
-                      <span className={`text-2xl font-bold ${
-                        role.score >= 80 ? 'text-green-400' :
-                        role.score >= 60 ? 'text-yellow-400' :
-                        role.score >= 40 ? 'text-orange-400' : 'text-red-400'
-                      }`}>
-                        {role.score}
+
+          {/* 检查是否为增强版分析结果 */}
+          {data.agentResults && data.agentResults.length > 0 ? (
+            <EnhancedAnalysisReport
+              agentResults={data.agentResults}
+              overallScore={data.overallScore}
+              recommendation={data.recommendation}
+              confidenceScore={data.confidenceScore || data.confidence}
+              keyFactors={data.keyFactors || []}
+              symbol={symbol}
+              stockName={data.stockName || symbol}
+            />
+          ) : (
+            /* 回退到原有分析显示 */
+            <div className="space-y-4">
+              {data.roleAnalysis.map((role: any) => (
+                <div key={role.role} className="border border-white/10 rounded-2xl overflow-hidden hover:border-purple-500/30 transition-all duration-300 shadow-sm hover:shadow-lg">
+                  <div
+                    className="p-5 cursor-pointer hover:bg-white/5 transition-colors flex items-center justify-between"
+                    onClick={() => toggleRole(role.role)}
+                  >
+                    <div className="flex items-center gap-4">
+                      <span className={`px-4 py-2 rounded-full text-white text-sm font-bold ${roleColors[role.role]} shadow-md`}>
+                        {roleNames[role.role]}
                       </span>
+                      <div>
+                        <span className="text-white/60 mr-3">评分</span>
+                        <span className={`text-2xl font-bold ${
+                          role.score >= 80 ? 'text-green-400' :
+                          role.score >= 60 ? 'text-yellow-400' :
+                          role.score >= 40 ? 'text-orange-400' : 'text-red-400'
+                        }`}>
+                          {role.score}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="transition-transform duration-300">
+                      {expandedRoles.has(role.role) ? <ChevronUp className="w-6 h-6 text-white/40" /> : <ChevronDown className="w-6 h-6 text-white/40" />}
                     </div>
                   </div>
-                  <div className="transition-transform duration-300">
-                    {expandedRoles.has(role.role) ? <ChevronUp className="w-6 h-6 text-white/40" /> : <ChevronDown className="w-6 h-6 text-white/40" />}
-                  </div>
-                </div>
 
-                {expandedRoles.has(role.role) && (
-                  <div className="p-6 bg-white/5 backdrop-blur-sm border-t border-white/10 animate-fadeIn">
-                    <p className="text-white/80 leading-relaxed text-lg mb-5">{role.analysis}</p>
-                    <h4 className="font-bold mb-3 flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5 text-purple-400" />
-                      关键点
-                    </h4>
-                    <ul className="space-y-3">
-                      {role.keyPoints.map((point: string, idx: number) => (
-                        <li key={idx} className="flex items-start gap-3 text-white/80 bg-white/5 backdrop-blur-sm p-3 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
-                          <span className="text-purple-400 font-bold mt-0.5 flex-shrink-0">{idx + 1}.</span>
-                          <span className="leading-relaxed">{point}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+                  {expandedRoles.has(role.role) && (
+                    <div className="p-6 bg-white/5 backdrop-blur-sm border-t border-white/10 animate-fadeIn">
+                      <p className="text-white/80 leading-relaxed text-lg mb-5">{role.analysis}</p>
+                      <h4 className="font-bold mb-3 flex items-center gap-2">
+                        <CheckCircle className="w-5 h-5 text-purple-400" />
+                        关键点
+                      </h4>
+                      <ul className="space-y-3">
+                        {role.keyPoints.map((point: string, idx: number) => (
+                          <li key={idx} className="flex items-start gap-3 text-white/80 bg-white/5 backdrop-blur-sm p-3 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
+                            <span className="text-purple-400 font-bold mt-0.5 flex-shrink-0">{idx + 1}.</span>
+                            <span className="leading-relaxed">{point}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* 底部信息 */}
