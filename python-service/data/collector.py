@@ -65,7 +65,7 @@ async def collect_a_share_data(symbol: str) -> dict:
 
             return {
                 "success": True,
-                "basic": process_a_share_basic(info),
+                "basic": process_a_share_basic(info, symbol),
                 "kline": process_akshare_kline(hist_data),
                 "financial": process_akshare_financial(financial),
                 "news": process_akshare_news(news),
@@ -145,13 +145,21 @@ async def collect_us_stock_data(symbol: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
-def process_a_share_basic(info: pd.DataFrame) -> dict:
+def process_a_share_basic(info: pd.DataFrame, symbol: str = "") -> dict:
     """处理A股基本信息"""
     if isinstance(info, pd.DataFrame) and len(info) > 0:
         row = info.iloc[0]
+        # 尝试多种可能的字段名
+        symbol_value = row.get("代码") or row.get("symbol") or row.get("code") or symbol
+        name_value = (
+            row.get("名称")
+            or row.get("name")
+            or row.get("company_name")
+            or row.get("名称.1", "")
+        )
         return {
-            "symbol": row.get("代码", ""),
-            "name": row.get("名称", ""),
+            "symbol": symbol_value if symbol_value else symbol,
+            "name": name_value,
             "market": "A",
             "currentPrice": float(row.get("最新价", 0) or 0),
             "marketCap": parse_chinese_number(row.get("总市值", "0")),
@@ -162,7 +170,8 @@ def process_a_share_basic(info: pd.DataFrame) -> dict:
             "turnoverRate": float(row.get("换手率", 0) or 0),
             "currency": "CNY",
         }
-    return {}
+    else:
+        return {"symbol": symbol, "name": "", "market": "A", "currency": "CNY"}
 
 
 def process_yfinance_basic(info: dict, market: str) -> dict:

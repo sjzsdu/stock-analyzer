@@ -3,6 +3,7 @@ API 端点测试
 """
 
 import pytest
+import pandas as pd
 from unittest.mock import patch, AsyncMock
 
 
@@ -105,40 +106,84 @@ class TestCollectEndpoint:
         from main import app
         from fastapi.testclient import TestClient
 
-        # yFinance 通常不需要 API key
         try:
             import yfinance
         except ImportError:
             pytest.skip("yfinance not installed")
 
-        client = TestClient(app)
-        response = client.post(
-            "/api/collect", json={"symbol": "0700.HK", "market": "HK"}
-        )
+        # Mock yFinance to avoid rate limiting
+        with patch("data.collector.yf.Ticker") as mock_ticker:
+            mock_instance = mock_ticker.return_value
+            mock_instance.info = {
+                "longName": "腾讯控股",
+                "currentPrice": 350.0,
+                "marketCap": 3000000000000,
+                "trailingPE": 20.5,
+            }
+            # Create DataFrame with proper 'Date' column
+            dates = pd.date_range("2024-01-01", periods=2, freq="D")
+            mock_instance.history.return_value = pd.DataFrame(
+                {
+                    "Date": dates,
+                    "Open": [340, 342],
+                    "High": [355, 358],
+                    "Low": [338, 340],
+                    "Close": [350, 352],
+                    "Volume": [1000000, 1200000],
+                }
+            )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is True
-        assert "basic" in data["data"]
+            client = TestClient(app)
+            response = client.post(
+                "/api/collect", json={"symbol": "0700.HK", "market": "HK"}
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["success"] is True
+            assert "basic" in data["data"]
 
     def test_collect_us_stock_success(self):
         """测试美股数据采集成功"""
         from main import app
         from fastapi.testclient import TestClient
 
-        # yFinance 通常不需要 API key
         try:
             import yfinance
         except ImportError:
             pytest.skip("yfinance not installed")
 
-        client = TestClient(app)
-        response = client.post("/api/collect", json={"symbol": "AAPL", "market": "US"})
+        # Mock yFinance to avoid rate limiting
+        with patch("data.collector.yf.Ticker") as mock_ticker:
+            mock_instance = mock_ticker.return_value
+            mock_instance.info = {
+                "longName": "Apple Inc.",
+                "currentPrice": 185.0,
+                "marketCap": 2800000000000,
+                "trailingPE": 28.5,
+            }
+            # Create DataFrame with proper 'Date' column
+            dates = pd.date_range("2024-01-01", periods=2, freq="D")
+            mock_instance.history.return_value = pd.DataFrame(
+                {
+                    "Date": dates,
+                    "Open": [182, 184],
+                    "High": [186, 188],
+                    "Low": [181, 183],
+                    "Close": [185, 186],
+                    "Volume": [50000000, 52000000],
+                }
+            )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is True
-        assert "basic" in data["data"]
+            client = TestClient(app)
+            response = client.post(
+                "/api/collect", json={"symbol": "AAPL", "market": "US"}
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["success"] is True
+            assert "basic" in data["data"]
 
 
 class TestAnalyzeEndpoint:

@@ -110,7 +110,9 @@ async def collect_stock_data_by_market(symbol: str, market: str) -> dict:
     Returns:
         采集结果字典
     """
-    collector = MARKET_COLLECTORS.get(market.lower())
+    # 规范化市场类型（支持大小写）
+    market_key = market.upper()
+    collector = MARKET_COLLECTORS.get(market_key)
 
     if not collector:
         raise ValueError(f"Unsupported market type: {market}")
