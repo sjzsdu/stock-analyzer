@@ -32,13 +32,13 @@ LLM_PROVIDERS = {
     "zhipu": {
         "name": "智谱AI (ChatGLM)",
         "models": ["glm-4"],
-        "api_base": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        "api_base": "https://open.bigmodel.cn/api/paas/v4",
         "env_key": "ZHIPU_API_KEY",
     },
     "qwen": {
         "name": "阿里千问 (Qwen)",
         "models": ["qwen-turbo", "qwen-plus", "qwen-max"],
-        "api_base": "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
+        "api_base": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
         "env_key": "QWEN_API_KEY",
     },
 }
