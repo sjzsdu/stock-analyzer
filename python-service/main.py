@@ -17,6 +17,8 @@ from data.collector import (
     collect_a_share_data,
     collect_hk_stock_data,
     collect_us_stock_data,
+    StockAnalysisResult,
+    stock_result_to_dict,
 )
 from agents.crew_agents import run_crew_analysis
 from utils.config import config
@@ -117,12 +119,15 @@ async def collect_stock_data_by_market(symbol: str, market: str) -> dict:
     if not collector:
         raise ValueError(f"Unsupported market type: {market}")
 
-    result = await collector(symbol)
+    result: StockAnalysisResult = await collector(symbol)
 
-    if result.get("success"):
-        return result
+    # 转换为字典返回（兼容旧接口）
+    result_dict = stock_result_to_dict(result)
+
+    if result.success:
+        return result_dict
     else:
-        error_msg = result.get("error", "Unknown error")
+        error_msg = result.error or "Unknown error"
         raise ValueError(
             f"{MARKET_NAMES.get(market, market)} data collection failed: {error_msg}"
         )
