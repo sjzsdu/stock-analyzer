@@ -8,6 +8,10 @@ import AnalysisSummary from '@/components/AnalysisSummary';
 import AnalystRadarChart from '@/components/AnalystRadarChart';
 import RiskOpportunityCard from '@/components/RiskOpportunityCard';
 import EnhancedAnalysisReport from '@/components/analysis/EnhancedAnalysisReport';
+import TechnicalIndicators from '@/components/stock/TechnicalIndicators';
+import FinancialMetrics from '@/components/stock/FinancialMetrics';
+import NewsFeed from '@/components/stock/NewsFeed';
+import DataQualityIndicator from '@/components/stock/DataQualityIndicator';
 
 // 角色名称映射
 const roleNames: Record<string, string> = {
@@ -182,7 +186,7 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
 
     // 从K线数据提取实时行情
     const calculateRealtimeData = () => {
-      if (!data.klineData || data.klineData.length === 0) {
+      if (!data.kline || data.kline.length === 0) {
         return {
           currentPrice: 0,
           changePercent: 0,
@@ -195,25 +199,22 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
         };
       }
 
-      const klineData = data.klineData;
+      const klineData = data.kline;
       const latest = klineData[klineData.length - 1];
       const previous = klineData[klineData.length - 2] || latest;
-      
+
       // 计算52周高低
-      const prices = klineData.map((k: number[]) => k[4] || k[2]); // 收盘价
+      const prices = klineData.map((k: any) => k.close || k[4] || k[2]); // 收盘价
       const high52w = Math.max(...prices);
       const low52w = Math.min(...prices);
-      
-      // 计算成交额（可能需要转换单位）
-      const turnover = latest[6] || 0; // 成交额
 
       return {
-        currentPrice: latest[4] || latest[2], // 收盘价
-        changePercent: previous[4] ? ((latest[4] - previous[4]) / previous[4]) * 100 : 0,
-        changeAmount: previous[4] ? (latest[4] - previous[4]) : 0,
-        previousClose: previous[4] || previous[2],
-        volume: latest[5] || 0, // 成交量
-        turnover: turnover,
+        currentPrice: latest.close || latest[4] || latest[2], // 收盘价
+        changePercent: previous.close ? ((latest.close - previous.close) / previous.close) * 100 : 0,
+        changeAmount: previous.close ? (latest.close - previous.close) : 0,
+        previousClose: previous.close || previous[4] || previous[2],
+        volume: latest.volume || latest[5] || 0, // 成交量
+        turnover: latest.turnover || latest[6] || 0, // 成交额
         high52w,
         low52w
       };
@@ -279,27 +280,36 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
           <div className="xl:col-span-2">
             <StockOverviewCard
               basic={{
-                name: data.stockName || data.stockBasic?.name,
-                symbol: data.stockBasic?.symbol || symbol,
-                market: data.stockBasic?.market,
-                industry: data.stockBasic?.industry
+                name: data.basic?.name || data.stockName || data.stockBasic?.name,
+                symbol: data.basic?.symbol || data.stockBasic?.symbol || symbol,
+                market: data.basic?.market || data.stockBasic?.market,
+                industry: data.basic?.industry || data.stockBasic?.industry
               }}
-              currentPrice={realtimeData.currentPrice}
+              currentPrice={data.basic?.current_price || realtimeData.currentPrice}
               changePercent={realtimeData.changePercent}
               changeAmount={realtimeData.changeAmount}
               previousClose={realtimeData.previousClose}
-              volume={realtimeData.volume}
+              volume={data.basic?.volume || realtimeData.volume}
               turnover={realtimeData.turnover}
-              marketCap={data.stockBasic?.marketCap || '--'}
-              circulatingCap={data.stockBasic?.circulatingCap || data.stockBasic?.marketCap || '--'}
+              marketCap={data.basic?.market_cap || data.stockBasic?.marketCap || '--'}
+              circulatingCap={data.basic?.market_cap || data.stockBasic?.circulatingCap || data.stockBasic?.marketCap || '--'}
               // 兼容多种字段名（A股、港股、美股）
-              pe={data.stockBasic?.pe || data.stockBasic?.peRatio || data.stockBasic?.forwardPE || data.stockBasic?.trailingPE || 0}
-              pb={data.stockBasic?.pb || data.stockBasic?.pbRatio || data.stockBasic?.priceToBook || 0}
-              dividend={data.stockBasic?.dividend || data.stockBasic?.dividendYield || 0}
-              roe={data.stockBasic?.roe || data.stockBasic?.returnOnEquity || 0}
-              high52w={realtimeData.high52w}
-              low52w={realtimeData.low52w}
-              latestNews={data.stockBasic?.latestNews || []}
+              pe={data.basic?.pe_ratio || data.financial?.pe_ratio || data.stockBasic?.pe || data.stockBasic?.peRatio || data.stockBasic?.forwardPE || data.stockBasic?.trailingPE || 0}
+              pb={data.basic?.pb_ratio || data.financial?.pb_ratio || data.stockBasic?.pb || data.stockBasic?.pbRatio || data.stockBasic?.priceToBook || 0}
+              dividend={data.basic?.dividend_yield || data.financial?.dividend_yield || data.stockBasic?.dividend || data.stockBasic?.dividendYield || 0}
+              roe={data.financial?.roe || data.basic?.returnOnEquity || data.stockBasic?.roe || data.stockBasic?.returnOnEquity || 0}
+              high52w={data.basic?.week_52_high || realtimeData.high52w}
+              low52w={data.basic?.week_52_low || realtimeData.low52w}
+              latestNews={data.news || data.stockBasic?.latestNews || []}
+              technicalIndicators={data.technical ? {
+                rsi: data.technical.rsi,
+                macd: data.technical.macd,
+                macd_signal: data.technical.macd_signal,
+                bollinger_upper: data.technical.bollinger_upper,
+                bollinger_lower: data.technical.bollinger_lower,
+                ma_5: data.technical.ma_5,
+                ma_20: data.technical.ma_20
+              } : undefined}
             />
           </div>
 
@@ -373,13 +383,98 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
           {/* K线图 */}
           <div className="glass-effect rounded-2xl overflow-hidden card-hover">
             <StockKLineChart
-              data={data.klineData || []}
-              symbol={data.stockBasic?.symbol || symbol}
+              data={data.kline || data.klineData || []}
+              symbol={data.basic?.symbol || data.stockBasic?.symbol || symbol}
             />
           </div>
         </div>
 
-        {/* 第三行：AI分析摘要 */}
+        {/* 第三行：技术指标和财务指标 */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
+          {/* 技术指标 */}
+          {data.technical && (
+            <TechnicalIndicators
+              data={data.technical}
+              currentPrice={data.basic?.current_price || realtimeData.currentPrice}
+              symbol={data.basic?.symbol || symbol}
+            />
+          )}
+
+          {/* 财务指标 */}
+          {data.financial && (
+            <div className="glass-effect rounded-3xl overflow-hidden card-hover">
+              <div className="px-6 py-4 bg-gradient-to-r from-green-500/20 to-blue-500/20 border-b border-white/10">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <div className="w-5 h-5 bg-gradient-to-br from-green-500 to-blue-600 rounded-lg flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">财</span>
+                  </div>
+                  财务指标分析
+                </h3>
+                <p className="text-white/60 text-sm mt-1">{data.basic?.symbol || symbol}</p>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-2 gap-4">
+                  {/* 盈利能力 */}
+                  <div className="bg-white/5 rounded-xl p-4">
+                    <h4 className="text-white/90 font-medium mb-3 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-green-400 rounded-full"></span>
+                      盈利能力
+                    </h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-white/60">ROE</span>
+                        <span className="text-white/90">{data.financial.roe ? `${data.financial.roe.toFixed(2)}%` : '--'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/60">净利率</span>
+                        <span className="text-white/90">{data.financial.net_profit_margin ? `${data.financial.net_profit_margin.toFixed(2)}%` : '--'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/60">毛利率</span>
+                        <span className="text-white/90">{data.financial.gross_profit_margin ? `${data.financial.gross_profit_margin.toFixed(2)}%` : '--'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 成长性 */}
+                  <div className="bg-white/5 rounded-xl p-4">
+                    <h4 className="text-white/90 font-medium mb-3 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-blue-400 rounded-full"></span>
+                      成长能力
+                    </h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-white/60">营收增长</span>
+                        <span className="text-white/90">{data.financial.revenue_growth ? `${data.financial.revenue_growth.toFixed(2)}%` : '--'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/60">利润增长</span>
+                        <span className="text-white/90">{data.financial.net_profit_growth ? `${data.financial.net_profit_growth.toFixed(2)}%` : '--'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/60">流动比率</span>
+                        <span className="text-white/90">{data.financial.current_ratio ? data.financial.current_ratio.toFixed(2) : '--'}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 第四行：新闻资讯 */}
+        {(data.news && data.news.length > 0) && (
+          <div className="mb-8">
+            <NewsFeed
+              news={data.news}
+              symbol={data.basic?.symbol || symbol}
+              maxItems={8}
+            />
+          </div>
+        )}
+
+        {/* 第五行：AI分析摘要 */}
         <div className="mb-8">
           <AnalysisSummary content={data.summary} />
         </div>
@@ -476,6 +571,30 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
               ))}
             </div>
           )}
+        </div>
+
+        {/* 数据质量指标 */}
+        <div className="mb-8">
+          <DataQualityIndicator
+            data={{
+              timestamp: data.timestamp,
+              data_source: data.data_source,
+              symbol: data.basic?.symbol || data.symbol,
+              market: data.basic?.market || data.market,
+              has_basic: !!data.basic,
+              has_kline: !!(data.kline && data.kline.length > 0),
+              has_technical: !!data.technical,
+              has_financial: !!data.financial,
+              has_news: !!(data.news && data.news.length > 0),
+              quality_score: Math.round(
+                ((!!data.basic ? 20 : 0) +
+                 (!!(data.kline && data.kline.length > 0) ? 20 : 0) +
+                 (!!data.technical ? 20 : 0) +
+                 (!!data.financial ? 20 : 0) +
+                 (!!(data.news && data.news.length > 0) ? 20 : 0))
+              )
+            }}
+          />
         </div>
 
         {/* 底部信息 */}

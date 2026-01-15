@@ -26,6 +26,16 @@ interface StockOverviewProps {
   high52w?: number;
   low52w?: number;
   latestNews?: string[];
+  // 新增技术指标
+  technicalIndicators?: {
+    rsi?: number;
+    macd?: number;
+    macd_signal?: number;
+    bollinger_upper?: number;
+    bollinger_lower?: number;
+    ma_5?: number;
+    ma_20?: number;
+  };
 }
 
 export default function StockOverviewCard({
@@ -44,7 +54,8 @@ export default function StockOverviewCard({
   roe,
   high52w,
   low52w,
-  latestNews = []
+  latestNews = [],
+  technicalIndicators
 }: StockOverviewProps) {
   
   const isPositive = changePercent >= 0;
@@ -222,6 +233,88 @@ export default function StockOverviewCard({
           </div>
         </div>
       </div>
+
+      {/* 技术指标 */}
+      {technicalIndicators && (
+        <div className="bg-white/5 rounded-xl p-5 border border-white/10 mt-6">
+          <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+            <LineChart className="w-5 h-5 text-green-400" />
+            技术指标
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* RSI */}
+            {technicalIndicators.rsi !== undefined && (
+              <div className="text-center">
+                <div className="text-white/60 text-sm mb-1">RSI(14)</div>
+                <div className={`font-bold text-lg ${
+                  technicalIndicators.rsi >= 70 ? 'text-red-400' :
+                  technicalIndicators.rsi >= 60 ? 'text-orange-400' :
+                  technicalIndicators.rsi >= 40 ? 'text-yellow-400' :
+                  technicalIndicators.rsi >= 30 ? 'text-orange-400' :
+                  'text-green-400'
+                }`}>
+                  {technicalIndicators.rsi.toFixed(1)}
+                </div>
+                <div className="text-white/40 text-xs">
+                  {technicalIndicators.rsi >= 70 ? '超买' :
+                   technicalIndicators.rsi >= 60 ? '强势' :
+                   technicalIndicators.rsi >= 40 ? '震荡' :
+                   technicalIndicators.rsi >= 30 ? '弱势' : '超卖'}
+                </div>
+              </div>
+            )}
+
+            {/* MACD */}
+            {technicalIndicators.macd !== undefined && (
+              <div className="text-center">
+                <div className="text-white/60 text-sm mb-1">MACD</div>
+                <div className={`font-bold text-lg ${
+                  technicalIndicators.macd > 0 ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  {technicalIndicators.macd.toFixed(3)}
+                </div>
+                <div className="text-white/40 text-xs">
+                  {technicalIndicators.macd > 0 ? '多头' : '空头'}
+                </div>
+              </div>
+            )}
+
+            {/* 布林带位置 */}
+            {technicalIndicators.bollinger_upper !== undefined && technicalIndicators.bollinger_lower !== undefined && (
+              <div className="text-center">
+                <div className="text-white/60 text-sm mb-1">布林带</div>
+                <div className={`font-bold text-lg ${
+                  currentPrice >= technicalIndicators.bollinger_upper ? 'text-red-400' :
+                  currentPrice <= technicalIndicators.bollinger_lower ? 'text-green-400' :
+                  'text-yellow-400'
+                }`}>
+                  {currentPrice >= technicalIndicators.bollinger_upper ? '上轨' :
+                   currentPrice <= technicalIndicators.bollinger_lower ? '下轨' : '中轨'}
+                </div>
+                <div className="text-white/40 text-xs">
+                  {currentPrice >= technicalIndicators.bollinger_upper ? '压力' :
+                   currentPrice <= technicalIndicators.bollinger_lower ? '支撑' : '平衡'}
+                </div>
+              </div>
+            )}
+
+            {/* MA对比 */}
+            {technicalIndicators.ma_5 !== undefined && technicalIndicators.ma_20 !== undefined && (
+              <div className="text-center">
+                <div className="text-white/60 text-sm mb-1">均线</div>
+                <div className={`font-bold text-lg ${
+                  technicalIndicators.ma_5 > technicalIndicators.ma_20 ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  {technicalIndicators.ma_5 > technicalIndicators.ma_20 ? '多头' : '空头'}
+                </div>
+                <div className="text-white/40 text-xs">
+                  MA5 vs MA20
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 最新动态 */}
       {latestNews.length > 0 && (
