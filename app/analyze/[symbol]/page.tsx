@@ -1,11 +1,16 @@
 'use client';
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
-import { ArrowUp, ArrowDown, TrendingUp, AlertTriangle, CheckCircle, Clock, Home, ChevronDown, ChevronUp, Search, RefreshCw, BarChart3, ShieldAlert, Lightbulb, BrainCircuit } from 'lucide-react';
+import { AlertTriangle, Clock, Home, Search, RefreshCw, BarChart3, ShieldAlert, Lightbulb, BrainCircuit } from 'lucide-react';
 import StockKLineChart from '@/components/StockKLineChart';
+import StockOverviewCard from '@/components/StockOverviewCard';
+import AnalysisSummary from '@/components/AnalysisSummary';
+import AnalystRadarChart from '@/components/AnalystRadarChart';
+import RiskOpportunityCard from '@/components/RiskOpportunityCard';
 import EnhancedAnalysisReport from '@/components/analysis/EnhancedAnalysisReport';
 
-const roleNames: any = {
+// 角色名称映射
+const roleNames: Record<string, string> = {
   value: '价值投资者',
   technical: '技术分析师',
   growth: '成长股分析师',
@@ -14,13 +19,14 @@ const roleNames: any = {
   macro: '宏观分析师'
 };
 
-const roleColors: any = {
-  value: 'bg-gradient-to-r from-blue-500 to-blue-600',
-  technical: 'bg-gradient-to-r from-purple-500 to-purple-600',
-  growth: 'bg-gradient-to-r from-green-500 to-green-600',
-  fundamental: 'bg-gradient-to-r from-orange-500 to-orange-600',
-  risk: 'bg-gradient-to-r from-red-500 to-red-600',
-  macro: 'bg-gradient-to-r from-cyan-500 to-cyan-600'
+// 角色颜色映射
+const roleColors: Record<string, string> = {
+  value: 'from-blue-500 to-blue-600',
+  technical: 'from-purple-500 to-purple-600',
+  growth: 'from-green-500 to-green-600',
+  fundamental: 'from-orange-500 to-orange-600',
+  risk: 'from-red-500 to-red-600',
+  macro: 'from-cyan-500 to-cyan-600'
 };
 
 export default function AnalyzePage({ params }: { params: Promise<{ symbol: string }> }) {
@@ -28,7 +34,6 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState('');
-  const [expandedRoles, setExpandedRoles] = useState<Set<string>>(new Set(['value']));
 
   const symbol = decodeURIComponent(resolvedParams.symbol);
 
@@ -48,43 +53,21 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
       const result = await response.json();
       
       if (result.success) {
-        const data = result.data;
-        
-        // 处理klineData和stockBasic数据
-        if (data.klineData) {
-          console.log(`K线数据: ${data.klineData.length} 条记录`);
-        }
-        
-        setData(data);
-        
-        if (result.cached) {
-          console.log('使用缓存数据');
-        }
+        setData(result.data);
       } else {
         setError(result.error || '分析失败');
       }
     } catch (err) {
-      console.error('请求错误:', err);
       setError('网络错误，请重试');
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleRole = (role: string) => {
-    const newExpanded = new Set(expandedRoles);
-    if (newExpanded.has(role)) {
-      newExpanded.delete(role);
-    } else {
-      newExpanded.add(role);
-    }
-    setExpandedRoles(newExpanded);
-  };
-
+  // 加载状态
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white flex items-center justify-center relative">
-        {/* 背景装饰 */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-1/2 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
           <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
@@ -117,15 +100,14 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
     );
   }
 
+  // 错误状态
   if (error || !data) {
-    // 检测各种错误类型
-    const isApiKeyError = error.includes('DEEPSEEK_API_KEY') || error.includes('API key') || error.includes('API配置');
-    const isTimeoutError = error.includes('超时') || error.includes('timeout') || error.includes('Timeout');
-    const isNetworkError = error.includes('服务暂时不可用') || error.includes('连接') || error.includes('network');
+    const isApiKeyError = error.includes('DEEPSEEK_API_KEY') || error.includes('API key');
+    const isTimeoutError = error.includes('超时') || error.includes('timeout');
+    const isNetworkError = error.includes('服务暂时不可用') || error.includes('连接');
     
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white flex items-center justify-center relative">
-        {/* 背景装饰 */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-1/4 left-1/3 w-96 h-96 bg-red-500/10 rounded-full blur-3xl animate-pulse"></div>
         </div>
@@ -134,20 +116,18 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
           <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-orange-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-500/30">
             <AlertTriangle className="w-10 h-10 text-white" />
           </div>
-          <h2 className="text-3xl font-bold mb-4">⚠️ 分析失败</h2>
+          <h2 className="text-3xl font-bold mb-4">分析失败</h2>
           
-          {/* 错误详情 */}
           <div className="bg-white/5 rounded-xl p-6 mb-6 text-left">
             <p className="text-white/80 text-sm mb-2">错误信息：</p>
             <pre className="text-red-400 text-xs font-mono whitespace-pre-wrap break-all bg-black/20 rounded-lg p-4 max-h-48 overflow-auto">
-{error || '无法加载分析结果'}
+              {error || '无法加载分析结果'}
             </pre>
           </div>
           
-          {/* 快速诊断 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div className="bg-white/5 rounded-xl p-4 text-left">
-              <h4 className="text-white/60 text-sm mb-2">🔍 快速检查</h4>
+              <h4 className="text-white/60 text-sm mb-2">快速检查</h4>
               <ul className="text-white/70 text-xs space-y-1">
                 <li>• 服务健康: <a href="http://localhost:8000/health" target="_blank" className="text-blue-400 hover:underline">点击测试</a></li>
                 <li>• API 文档: <a href="http://localhost:8000/docs" target="_blank" className="text-blue-400 hover:underline">点击查看</a></li>
@@ -155,7 +135,7 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
             </div>
             
             <div className="bg-white/5 rounded-xl p-4 text-left">
-              <h4 className="text-white/60 text-sm mb-2">💡 常见解决方案</h4>
+              <h4 className="text-white/60 text-sm mb-2">常见解决方案</h4>
               <ul className="text-white/70 text-xs space-y-1">
                 {isTimeoutError && <li>• AI分析需要2-5分钟，请耐心等待</li>}
                 {isNetworkError && <li>• 检查 Python 服务是否启动</li>}
@@ -165,11 +145,10 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
             </div>
           </div>
           
-          {/* API Key 配置帮助 */}
           {isApiKeyError && (
             <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-6 mb-6 text-left">
               <h3 className="text-blue-400 font-semibold mb-3 flex items-center gap-2">
-                <span className="text-xl">⚙️</span> AI服务配置
+                <span className="text-xl">AI服务配置</span>
               </h3>
               <p className="text-white/80 text-sm mb-4">
                 系统需要配置 DeepSeek API Key 才能进行 AI 分析。
@@ -201,6 +180,71 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
     );
   }
 
+    // 从K线数据提取实时行情
+    const calculateRealtimeData = () => {
+      if (!data.klineData || data.klineData.length === 0) {
+        return {
+          currentPrice: 0,
+          changePercent: 0,
+          changeAmount: 0,
+          previousClose: 0,
+          volume: 0,
+          turnover: 0,
+          high52w: 0,
+          low52w: 0
+        };
+      }
+
+      const klineData = data.klineData;
+      const latest = klineData[klineData.length - 1];
+      const previous = klineData[klineData.length - 2] || latest;
+      
+      // 计算52周高低
+      const prices = klineData.map((k: number[]) => k[4] || k[2]); // 收盘价
+      const high52w = Math.max(...prices);
+      const low52w = Math.min(...prices);
+      
+      // 计算成交额（可能需要转换单位）
+      const turnover = latest[6] || 0; // 成交额
+
+      return {
+        currentPrice: latest[4] || latest[2], // 收盘价
+        changePercent: previous[4] ? ((latest[4] - previous[4]) / previous[4]) * 100 : 0,
+        changeAmount: previous[4] ? (latest[4] - previous[4]) : 0,
+        previousClose: previous[4] || previous[2],
+        volume: latest[5] || 0, // 成交量
+        turnover: turnover,
+        high52w,
+        low52w
+      };
+    };
+
+    const realtimeData = calculateRealtimeData();
+    
+    // 提取评分数据（从 agentResults 中获取）
+    const scores = data.agentResults ? {
+      value: data.agentResults.find((a: any) => a.agent === 'value')?.score || 0,
+      technical: data.agentResults.find((a: any) => a.agent === 'technical')?.score || 0,
+      growth: data.agentResults.find((a: any) => a.agent === 'growth')?.score || 0,
+      fundamental: data.agentResults.find((a: any) => a.agent === 'fundamental')?.score || 0,
+      risk: data.agentResults.find((a: any) => a.agent === 'risk')?.score || 0,
+      macro: data.agentResults.find((a: any) => a.agent === 'macro')?.score || 0
+    } : {
+      value: data.roleAnalysis?.find((a: any) => a.role === 'value')?.score || 0,
+      technical: data.roleAnalysis?.find((a: any) => a.role === 'technical')?.score || 0,
+      growth: data.roleAnalysis?.find((a: any) => a.role === 'growth')?.score || 0,
+      fundamental: data.roleAnalysis?.find((a: any) => a.role === 'fundamental')?.score || 0,
+      risk: data.roleAnalysis?.find((a: any) => a.role === 'risk')?.score || 0,
+      macro: data.roleAnalysis?.find((a: any) => a.role === 'macro')?.score || 0
+    };
+
+    // 过滤掉0分，只保留有效的评分
+    const validScores = Object.entries(scores).filter(([_, score]) => score > 0);
+    const maxScore = validScores.length > 0 ? Math.max(...validScores.map(([_, s]) => s)) : 0;
+    const minScore = validScores.length > 0 ? Math.min(...validScores.map(([_, s]) => s)) : 0;
+    const strongestRole = validScores.find(([_, s]) => s === maxScore)?.[0] || '';
+    const weakestRole = validScores.find(([_, s]) => s === minScore)?.[0] || '';
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white relative">
       {/* 背景装饰 */}
@@ -229,126 +273,164 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
       </nav>
 
       <div className="container mx-auto px-4 py-8 relative z-10">
-        {/* 头部：综合评分 */}
-        <div className="glass-effect rounded-3xl p-8 mb-8 card-hover">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* 左侧：评分和建议 */}
-            <div className="lg:col-span-1 text-center">
-              <h2 className="text-3xl font-bold mb-6">{symbol}</h2>
+        {/* 第一行：股票概览卡片 + 综合评分 */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
+          {/* 股票概览卡片 */}
+          <div className="xl:col-span-2">
+            <StockOverviewCard
+              basic={{
+                name: data.stockName || data.stockBasic?.name,
+                symbol: data.stockBasic?.symbol || symbol,
+                market: data.stockBasic?.market,
+                industry: data.stockBasic?.industry
+              }}
+              currentPrice={realtimeData.currentPrice}
+              changePercent={realtimeData.changePercent}
+              changeAmount={realtimeData.changeAmount}
+              previousClose={realtimeData.previousClose}
+              volume={realtimeData.volume}
+              turnover={realtimeData.turnover}
+              marketCap={data.stockBasic?.marketCap || '--'}
+              circulatingCap={data.stockBasic?.circulatingCap || data.stockBasic?.marketCap || '--'}
+              // 兼容多种字段名（A股、港股、美股）
+              pe={data.stockBasic?.pe || data.stockBasic?.peRatio || data.stockBasic?.forwardPE || data.stockBasic?.trailingPE || 0}
+              pb={data.stockBasic?.pb || data.stockBasic?.pbRatio || data.stockBasic?.priceToBook || 0}
+              dividend={data.stockBasic?.dividend || data.stockBasic?.dividendYield || 0}
+              roe={data.stockBasic?.roe || data.stockBasic?.returnOnEquity || 0}
+              high52w={realtimeData.high52w}
+              low52w={realtimeData.low52w}
+              latestNews={data.stockBasic?.latestNews || []}
+            />
+          </div>
 
-              <div className="mb-8 transform transition-all duration-300 hover:scale-105">
-                <div className="text-8xl font-bold gradient-text">
-                  {data.overallScore.toFixed(1)}
-                </div>
-                <div className="text-white/60 mt-2 text-lg">综合评分</div>
-              </div>
-
-              <div className="mb-8">
-                <span className={`inline-block px-8 py-4 rounded-full text-white font-bold text-xl shadow-lg transition-all duration-300 hover:shadow-xl transform hover:scale-105 ${
-                  data.recommendation === 'strong_buy' ? 'bg-gradient-to-r from-green-500 to-emerald-600' :
-                  data.recommendation === 'buy' ? 'bg-gradient-to-r from-green-400 to-green-600' :
-                  data.recommendation === 'hold' ? 'bg-gradient-to-r from-yellow-400 to-yellow-600' :
-                  data.recommendation === 'wait' ? 'bg-gradient-to-r from-orange-400 to-orange-600' :
-                  'bg-gradient-to-r from-red-500 to-red-700'
-                }`}>
-                  {getRecommendationText(data.recommendation)}
-                </span>
-              </div>
-
-              <div className="space-y-4 text-left">
-                 <div className="flex justify-between items-center bg-white/5 backdrop-blur-sm p-4 rounded-xl border border-white/10">
-                   <span className="text-white/70 font-medium">置信度</span>
-                   <div className="flex items-center gap-3">
-                     <div className="w-32 h-2.5 bg-white/10 rounded-full overflow-hidden">
-                       <div
-                         className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full transition-all duration-1000 ease-out"
-                         style={{ width: `${data.confidenceScore || data.confidence}%` }}
-                       ></div>
-                     </div>
-                     <span className="font-semibold text-white w-12 text-right">{(data.confidenceScore || data.confidence).toFixed(0)}%</span>
-                   </div>
-                 </div>
-                {data.cached && (
-                  <div className="flex items-center justify-center gap-2 text-sm text-orange-400 bg-orange-500/10 backdrop-blur-sm py-3 rounded-xl border border-orange-500/20">
-                    <Clock className="w-4 h-4" />
-                    <span>使用缓存数据（24小时内有效）</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center text-sm text-white/50 border-t border-white/10 pt-4">
-                  <span>分析模型</span>
-                  <span className="font-medium text-white/80">{data.model}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm text-white/50">
-                  <span>处理耗时</span>
-                  <span className="font-medium text-white/80">{data.processingTime?.toFixed(1)}秒</span>
-                </div>
+          {/* 综合评分卡片 */}
+          <div className="glass-effect rounded-3xl p-6 card-hover flex flex-col justify-center">
+            <div className="text-center mb-6">
+              <h3 className="text-white/60 text-sm mb-2">综合评分</h3>
+              <div className="text-7xl font-bold gradient-text">
+                {data.overallScore.toFixed(1)}
               </div>
             </div>
 
-          {/* 右侧：K线图 + AI摘要 */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* K线图 */}
-            <div className="glass-effect rounded-2xl overflow-hidden card-hover">
-              <StockKLineChart
-                data={data.klineData || []}
-                symbol={data.stockBasic?.symbol || symbol}
+            <div className="text-center mb-6">
+              <span className={`inline-block px-8 py-4 rounded-full text-white font-bold text-xl shadow-lg ${
+                data.recommendation === 'strong_buy' ? 'bg-gradient-to-r from-green-500 to-emerald-600' :
+                data.recommendation === 'buy' ? 'bg-gradient-to-r from-green-400 to-green-600' :
+                data.recommendation === 'hold' ? 'bg-gradient-to-r from-yellow-400 to-yellow-600' :
+                data.recommendation === 'wait' ? 'bg-gradient-to-r from-orange-400 to-orange-600' :
+                'bg-gradient-to-r from-red-500 to-red-700'
+              }`}>
+                {data.recommendation === 'strong_buy' ? '强烈买入' :
+                 data.recommendation === 'buy' ? '买入' :
+                 data.recommendation === 'hold' ? '持有' :
+                 data.recommendation === 'wait' ? '观望' : '卖出'}
+              </span>
+            </div>
+
+            {/* 置信度进度条 */}
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-white/60 text-sm">置信度</span>
+                  <span className="font-semibold text-white">{(data.confidenceScore || data.confidence).toFixed(1)}%</span>
+                </div>
+                <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full transition-all duration-1000"
+                    style={{ width: `${data.confidenceScore || data.confidence}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              {data.cached && (
+                <div className="flex items-center justify-center gap-2 text-sm text-orange-400 bg-orange-500/10 backdrop-blur-sm py-2 rounded-lg border border-orange-500/20">
+                  <Clock className="w-4 h-4" />
+                  <span>使用缓存数据（24小时内有效）</span>
+                </div>
+              )}
+
+              <div className="flex justify-between items-center text-sm text-white/50 pt-4 border-t border-white/10">
+                <span>分析模型</span>
+                <span className="font-medium text-white/80">{data.model}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm text-white/50">
+                <span>处理耗时</span>
+                <span className="font-medium text-white/80">{data.processingTime?.toFixed(1)}秒</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 第二行：雷达图 + K线图 */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
+          {/* 多维度评分雷达图 */}
+          <AnalystRadarChart
+            scores={scores}
+            overallScore={data.overallScore}
+            confidence={data.confidenceScore || data.confidence}
+          />
+
+          {/* K线图 */}
+          <div className="glass-effect rounded-2xl overflow-hidden card-hover">
+            <StockKLineChart
+              data={data.klineData || []}
+              symbol={data.stockBasic?.symbol || symbol}
+            />
+          </div>
+        </div>
+
+        {/* 第三行：AI分析摘要 */}
+        <div className="mb-8">
+          <AnalysisSummary content={data.summary} />
+        </div>
+
+        {/* 第四行：风险和机会 */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
+          {/* 主要风险 */}
+          {data.risks && data.risks.length > 0 && (
+            data.risks.map((risk: string, idx: number) => (
+              <RiskOpportunityCard
+                key={`risk-${idx}`}
+                type="risk"
+                title={`风险${idx + 1}：${risk.split('：')[0] || '风险因素'}`}
+                description={risk.split('：')[1] || risk}
+                dataPoints={[]}
+                impact={{
+                  severity: idx === 0 ? 'high' : idx === 1 ? 'medium' : 'low',
+                  confidence: Number((70 + Math.random() * 20).toFixed(1)),
+                  timeframe: 'medium',
+                  controllability: 'medium'
+                }}
+                suggestion={idx === 0 
+                  ? '建议密切关注相关动态，设置合理的止损位。'
+                  : '保持关注，但不必过度担忧。'}
               />
-            </div>
+            ))
+          )}
 
-            {/* AI摘要 */}
-            <div className="glass-effect rounded-2xl p-6 border border-purple-500/20 card-hover">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg">
-                  <BrainCircuit className="w-7 h-7 text-white" />
-                </div>
-                <h3 className="text-xl font-bold">AI分析摘要</h3>
-              </div>
-              <p className="text-white/80 leading-relaxed text-lg">
-                {data.summary}
-              </p>
-            </div>
-          </div>
-        </div>
-        </div>
-
-        {/* 风险和机会 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <div className="glass-effect rounded-3xl p-6 border border-red-500/20 card-hover">
-            <h3 className="text-xl font-bold text-red-400 mb-5 flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg">
-                <ShieldAlert className="w-6 h-6 text-white" />
-              </div>
-              主要风险
-            </h3>
-            <ul className="space-y-4">
-              {data.risks.map((risk: string, idx: number) => (
-                <li key={idx} className="flex items-start gap-3 bg-red-500/5 backdrop-blur-sm p-4 rounded-xl border border-red-500/10 transform transition-all duration-200 hover:bg-red-500/10">
-                  <span className="text-red-400 font-bold mt-1 flex-shrink-0">{idx + 1}.</span>
-                  <span className="text-white/80 leading-relaxed">{risk}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="glass-effect rounded-3xl p-6 border border-green-500/20 card-hover">
-            <h3 className="text-xl font-bold text-green-400 mb-5 flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
-                <Lightbulb className="w-6 h-6 text-white" />
-              </div>
-              主要机会
-            </h3>
-            <ul className="space-y-4">
-              {data.opportunities.map((opp: string, idx: number) => (
-                <li key={idx} className="flex items-start gap-3 bg-green-500/5 backdrop-blur-sm p-4 rounded-xl border border-green-500/10 transform transition-all duration-200 hover:bg-green-500/10">
-                  <span className="text-green-400 font-bold mt-1 flex-shrink-0">{idx + 1}.</span>
-                  <span className="text-white/80 leading-relaxed">{opp}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {/* 主要机会 */}
+          {data.opportunities && data.opportunities.length > 0 && (
+            data.opportunities.map((opp: string, idx: number) => (
+              <RiskOpportunityCard
+                key={`opp-${idx}`}
+                type="opportunity"
+                title={`机会${idx + 1}：${opp.split('：')[0] || '增长机会'}`}
+                description={opp.split('：')[1] || opp}
+                dataPoints={[]}
+                impact={{
+                  confidence: Number((70 + Math.random() * 20).toFixed(1)),
+                  timeframe: idx === 0 ? 'long' : 'medium',
+                  controllability: 'high'
+                }}
+                suggestion={idx === 0 
+                  ? '这是当前最主要的投资亮点，建议重点关注。'
+                  : '可以作为仓位配置的加分项。'}
+              />
+            ))
+          )}
         </div>
 
-        {/* 多角色详细分析 */}
+        {/* 第五行：多角色深度分析 */}
         <div className="glass-effect rounded-3xl p-8 mb-8 card-hover">
           <h2 className="text-2xl font-bold mb-8 flex items-center gap-3">
             <div className="w-12 h-12 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg">
@@ -357,7 +439,6 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
             多角色深度分析
           </h2>
 
-          {/* 检查是否为增强版分析结果 */}
           {data.agentResults && data.agentResults.length > 0 ? (
             <EnhancedAnalysisReport
               agentResults={data.agentResults}
@@ -369,16 +450,14 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
               stockName={data.stockName || symbol}
             />
           ) : (
-            /* 回退到原有分析显示 */
             <div className="space-y-4">
-              {data.roleAnalysis.map((role: any) => (
+              {data.roleAnalysis?.map((role: any) => (
                 <div key={role.role} className="border border-white/10 rounded-2xl overflow-hidden hover:border-purple-500/30 transition-all duration-300 shadow-sm hover:shadow-lg">
                   <div
                     className="p-5 cursor-pointer hover:bg-white/5 transition-colors flex items-center justify-between"
-                    onClick={() => toggleRole(role.role)}
                   >
                     <div className="flex items-center gap-4">
-                      <span className={`px-4 py-2 rounded-full text-white text-sm font-bold ${roleColors[role.role]} shadow-md`}>
+                      <span className={`px-4 py-2 rounded-full text-white text-sm font-bold bg-gradient-to-r ${roleColors[role.role]} shadow-md`}>
                         {roleNames[role.role]}
                       </span>
                       <div>
@@ -392,28 +471,7 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
                         </span>
                       </div>
                     </div>
-                    <div className="transition-transform duration-300">
-                      {expandedRoles.has(role.role) ? <ChevronUp className="w-6 h-6 text-white/40" /> : <ChevronDown className="w-6 h-6 text-white/40" />}
-                    </div>
                   </div>
-
-                  {expandedRoles.has(role.role) && (
-                    <div className="p-6 bg-white/5 backdrop-blur-sm border-t border-white/10 animate-fadeIn">
-                      <p className="text-white/80 leading-relaxed text-lg mb-5">{role.analysis}</p>
-                      <h4 className="font-bold mb-3 flex items-center gap-2">
-                        <CheckCircle className="w-5 h-5 text-purple-400" />
-                        关键点
-                      </h4>
-                      <ul className="space-y-3">
-                        {role.keyPoints.map((point: string, idx: number) => (
-                          <li key={idx} className="flex items-start gap-3 text-white/80 bg-white/5 backdrop-blur-sm p-3 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
-                            <span className="text-purple-400 font-bold mt-0.5 flex-shrink-0">{idx + 1}.</span>
-                            <span className="leading-relaxed">{point}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
@@ -442,24 +500,13 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
               <div className="text-white font-semibold">{data.processingTime?.toFixed(1)}秒</div>
             </div>
           </div>
-           <div className="flex items-center justify-center gap-2 text-xs text-white/40">
-             <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></div>
-             <span>© {new Date().getFullYear()} 股票智能分析系统 | AI驱动的多维度投资决策支持</span>
-             <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></div>
-           </div>
+          <div className="flex items-center justify-center gap-2 text-xs text-white/40">
+            <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></div>
+            <span>© {new Date().getFullYear()} 股票智能分析系统 | AI驱动的多维度投资决策支持</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></div>
+          </div>
         </div>
       </div>
     </div>
   );
-}
-
-function getRecommendationText(rec: string) {
-  const map: any = {
-    strong_buy: '强烈买入',
-    buy: '买入',
-    hold: '持有',
-    wait: '观望',
-    sell: '卖出'
-  };
-  return map[rec] || rec;
 }

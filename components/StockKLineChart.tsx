@@ -190,14 +190,14 @@ export default function StockKLineChart({ data, symbol }: Props) {
         align: 'right',
         x: -3,
         style: {
-          color: '#6b7280',
+          color: '#ffffff',
           fontSize: '0.875rem'
         }
       },
       title: {
         text: '股价',
         style: {
-          color: '#374151',
+          color: '#ffffff',
           fontWeight: 600,
           fontSize: '0.875rem'
         }
@@ -206,23 +206,23 @@ export default function StockKLineChart({ data, symbol }: Props) {
       resize: {
         enabled: true
       },
-      gridLineColor: '#f3f4f6',
-      lineColor: '#e5e7eb',
+      gridLineColor: '#374151',
+      lineColor: '#4b5563',
       lineWidth: 1,
-      tickColor: '#e5e7eb'
+      tickColor: '#4b5563'
     }, {
       labels: {
         align: 'right',
         x: -3,
         style: {
-          color: '#6b7280',
+          color: '#ffffff',
           fontSize: '0.875rem'
         }
       },
       title: {
         text: '成交量',
         style: {
-          color: '#374151',
+          color: '#ffffff',
           fontWeight: 600,
           fontSize: '0.875rem'
         }

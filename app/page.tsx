@@ -1,37 +1,19 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
+import PublicHeader from '@/components/layout/PublicHeader';
 import {
   Search, ArrowRight, Sparkles, Zap, BarChart3, BrainCircuit,
-  Globe, TrendingUp, ShieldAlert, RefreshCw, ChevronRight,
-  Clock, Target, LineChart, Database, Award
+  Globe, TrendingUp, ShieldAlert, ChevronRight,
+  Target, LineChart, Database, Award
 } from 'lucide-react';
 
 export default function Home() {
   const [symbol, setSymbol] = useState('');
   const [loading, setLoading] = useState(false);
-  const headerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      if (headerRef.current) {
-        const scrollY = window.scrollY;
-        if (scrollY > 50) {
-          headerRef.current.style.background = 'rgba(0, 0, 0, 0.9)';
-          headerRef.current.style.backdropFilter = 'blur(10px)';
-          headerRef.current.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.3)';
-        } else {
-          headerRef.current.style.background = 'rgba(0, 0, 0, 0.3)';
-          headerRef.current.style.backdropFilter = 'blur(10px)';
-          headerRef.current.style.boxShadow = 'none';
-        }
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  const { data: session, status } = useSession();
 
   const handleAnalyze = () => {
     if (!symbol.trim()) return;
@@ -89,35 +71,12 @@ export default function Home() {
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
       </div>
 
-      {/* 头部 */}
-      <header ref={headerRef} className="fixed top-0 left-0 right-0 z-50 transition-all duration-500 bg-transparent">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 whitespace-nowrap">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-purple-500/20">
-                <TrendingUp className="w-6 h-6 text-white" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-lg font-bold text-white flex-shrink-0 whitespace-nowrap">智能投资分析</span>
-                <span className="text-xs text-gray-400">AI-Driven Stock Analysis</span>
-              </div>
-            </div>
-            <nav className="hidden md:flex items-center gap-8 text-sm font-medium">
-              <Link href="/" className="text-white/90 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-all">首页</Link>
-              <Link href="/features" className="text-white/70 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-all">功能</Link>
-              <Link href="/pricing" className="text-white/70 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-all">定价</Link>
-              <Link href="/about" className="text-white/70 hover:text-white hover:bg-white/10 px-3 py-2 rounded-lg transition-all">关于我们</Link>
-              <Link href="/auth/signup" className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-5 py-2 rounded-lg font-medium transition-all button-hover">
-                免费注册
-              </Link>
-            </nav>
-          </div>
-        </div>
-      </header>
+      {/* 头部 - 使用 PublicHeader 组件，支持登录状态 */}
+      <PublicHeader currentPath="/" />
 
       <main className="relative">
         {/* 英雄区域 */}
-        <section className="pt-32 pb-32 relative">
+        <section className="pt-28 pb-32 relative">
           <div className="container mx-auto px-4">
             {/* 标签 */}
             <div className="flex justify-center mb-8 animate-fadeInUp" style={{ animationDelay: '0.2s' }}>
@@ -135,9 +94,13 @@ export default function Home() {
               <span className="gradient-text block mt-2">深度分析</span>
             </h1>
 
-            {/* 副标题 */}
+            {/* 副标题 - 根据登录状态显示不同内容 */}
             <p className="text-xl md:text-2xl text-white/70 max-w-3xl mx-auto mb-12 text-center leading-relaxed animate-fadeInUp" style={{ animationDelay: '0.6s' }}>
-              多Agent协作 · 全维度数据 · 智能投资决策支持
+              {status === 'authenticated' ? (
+                <>欢迎回来，{session?.user?.name || '投资者'}！让我们继续探索投资机会</>
+              ) : (
+                <>多Agent协作 · 全维度数据 · 智能投资决策支持</>
+              )}
             </p>
 
             {/* 搜索区域 */}
@@ -158,7 +121,7 @@ export default function Home() {
                   <button
                     onClick={handleAnalyze}
                     disabled={loading}
-                    className="bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 text-white border-none rounded-xl px-8 py-4 font-semibold text-lg cursor-pointer transition-all button-hover flex items-center gap-3 shadow-lg shadow-purple-500/25"
+                    className="bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 text-white border-none rounded-xl px-8 py-4 font-semibold text-lg cursor-pointer transition-all button-hover flex items-center gap-3 shadow-lg shadow-purple-500/25 whitespace-nowrap"
                   >
                     {loading ? (
                       <>
@@ -167,14 +130,20 @@ export default function Home() {
                       </>
                     ) : (
                       <>
-                        <span>开始分析</span>
+                        <span>{status === 'authenticated' ? '开始分析' : '开始分析'}</span>
                         <ArrowRight className="w-5 h-5" />
                       </>
                     )}
                   </button>
                 </div>
               </div>
-              </div>
+              {/* 未登录用户提示 */}
+              {status !== 'authenticated' && (
+                <p className="text-center text-white/50 text-sm mt-4 animate-fadeInUp" style={{ animationDelay: '1s' }}>
+                  登录后享受更多分析次数和高级功能
+                </p>
+              )}
+            </div>
 
             {/* 数据展示 */}
             <div className="flex justify-center gap-8 mt-16 animate-fadeInUp" style={{ animationDelay: '1s' }}>

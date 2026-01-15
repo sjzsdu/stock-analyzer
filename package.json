@@ -26,9 +26,12 @@
     "nodemailer": "^7.0.12",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "react-hook-form": "^7.71.0"
+    "react-hook-form": "^7.71.0",
+    "react-markdown": "^10.1.0",
+    "recharts": "^3.6.0"
   },
   "devDependencies": {
+    "@tailwindcss/typography": "^0.5.19",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^25.0.6",
     "@types/nodemailer": "^7.0.5",

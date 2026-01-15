@@ -167,20 +167,74 @@ def process_a_share_basic(info: pd.DataFrame) -> dict:
 
 def process_yfinance_basic(info: dict, market: str) -> dict:
     """处理yFinance基本信息（港股/美股）"""
+    if not info:
+        return {}
+
+    # 尝试多种方式获取公司名称
+    name = info.get("longName") or info.get("shortName") or info.get("displayName", "")
+
+    # 尝试多种方式获取PE
+    pe = (
+        info.get("forwardPE")
+        or info.get("trailingPE")
+        or info.get("defaultKeyStatistics", {}).get("forwardPE", {}).get("raw", 0)
+    )
+    if isinstance(pe, dict):
+        pe = pe.get("raw", 0)
+
+    # 尝试多种方式获取PB
+    pb = info.get("priceToBook") or info.get("pbRatio", 0)
+    if isinstance(pb, dict):
+        pb = pb.get("raw", 0)
+
+    # 尝试多种方式获取股息率
+    dividend = info.get("dividendYield") or info.get("dividendYield", 0)
+    if isinstance(dividend, dict):
+        dividend = dividend.get("raw", dividend)
+
+    # 尝试获取ROE
+    roe = info.get("returnOnEquity") or info.get("returnOnEquity", 0)
+    if isinstance(roe, dict):
+        roe = roe.get("raw", roe)
+
+    # 获取市值（转换为亿单位）
+    market_cap = info.get("marketCap", 0) or 0
+    if market_cap > 0:
+        market_cap_formatted = format_market_cap(market_cap)
+    else:
+        market_cap_formatted = "--"
+
+    # 获取当前价格
+    current_price = float(info.get("currentPrice", info.get("regularPrice", 0)) or 0)
+
     return {
         "symbol": info.get("symbol", ""),
-        "name": info.get("longName", info.get("shortName", "")),
+        "name": name,
         "market": market,
-        "currentPrice": float(
-            info.get("currentPrice", info.get("regularPrice", 0)) or 0
-        ),
-        "marketCap": float(info.get("marketCap", 0) or 0),
-        "peRatio": float(info.get("forwardPE", info.get("trailingPE", 0)) or 0),
-        "pbRatio": float(info.get("priceToBook", 0) or 0),
-        "dividendYield": float(info.get("dividendYield", 0) or 0),
+        "currentPrice": current_price,
+        "marketCap": market_cap_formatted,
+        "peRatio": float(pe) if pe else 0,
+        "pbRatio": float(pb) if pb else 0,
+        "dividendYield": float(dividend) if dividend else 0,
+        "returnOnEquity": float(roe) if roe else 0,
         "volume": float(info.get("volume", 0) or 0),
-        "currency": info.get("currency", "USD"),
+        "currency": info.get("currency", "HKD" if market == "HK" else "USD"),
+        "exchange": info.get("exchange", ""),
+        "industry": info.get("industry", ""),
+        "sector": info.get("sector", ""),
     }
+
+
+def format_market_cap(market_cap: int) -> str:
+    """格式化市值显示"""
+    if market_cap >= 1e12:
+        return f"{market_cap / 1e12:.2f}万亿"
+    elif market_cap >= 1e8:
+        return f"{market_cap / 1e8:.2f}亿"
+    elif market_cap >= 1e4:
+        return f"{market_cap / 1e4:.2f}万"
+    else:
+        return str(market_cap)
 
 
 def process_akshare_kline(df: pd.DataFrame) -> list:
@@ -217,26 +271,37 @@ def process_akshare_kline(df: pd.DataFrame) -> list:
 
 
 def process_yfinance_kline(df: pd.DataFrame) -> list:
-    """转换yFinance K线数据格式"""
+    """转换yFinance K线数据格式（支持港股和美股）"""
     kline = []
     if df is None or len(df) == 0:
         return kline
 
     df = df.reset_index()
+
     for idx, row in df.iterrows():
         try:
             timestamp = int(row["Date"].timestamp() * 1000)
         except:
             timestamp = int(pd.to_datetime(row["Date"]).timestamp() * 1000)
 
+        open_price = float(row["Open"])
+        close_price = float(row["Close"])
+        volume = int(row["Volume"])
+
+        # yFinance 不提供成交额，估算为：成交额 = 均价 × 成交量
+        # 均价 = (开盘 + 收盘) / 2
+        avg_price = (open_price + close_price) / 2
+        turnover = avg_price * volume
+
         kline.append(
             [
                 timestamp,
-                float(row["Open"]),
+                open_price,
                 float(row["High"]),
                 float(row["Low"]),
-                float(row["Close"]),
-                int(row["Volume"]),
+                close_price,
+                volume,
+                turnover,  # 估算成交额
             ]
         )
     return kline

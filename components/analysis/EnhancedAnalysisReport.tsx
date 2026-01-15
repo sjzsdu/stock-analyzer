@@ -197,27 +197,29 @@ export default function EnhancedAnalysisReport({
               {/* Confidence */}
               <div className="text-center">
                 <div className="text-4xl font-bold text-white mb-2">
-                  {confidenceScore.toFixed(0)}%
+                  {confidenceScore.toFixed(1)}%
                 </div>
                 <div className="text-white/60">置信度</div>
               </div>
             </div>
 
             {/* Key Factors */}
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <Target className="w-5 h-5 text-purple-400" />
-                关键投资要点
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {keyFactors.map((factor, idx) => (
-                  <div key={idx} className="flex items-start gap-3 bg-white/5 backdrop-blur-sm p-4 rounded-xl border border-white/10">
-                    <span className="text-purple-400 font-bold mt-0.5 flex-shrink-0">{idx + 1}.</span>
-                    <span className="text-white/80 leading-relaxed">{factor}</span>
-                  </div>
-                ))}
+            {keyFactors && keyFactors.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <Target className="w-5 h-5 text-purple-400" />
+                  关键投资要点
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {keyFactors.map((factor, idx) => (
+                    <div key={idx} className="flex items-start gap-3 bg-white/5 backdrop-blur-sm p-4 rounded-xl border border-white/10">
+                      <span className="text-purple-400 font-bold mt-0.5 flex-shrink-0">{idx + 1}.</span>
+                      <span className="text-white/80 leading-relaxed">{factor}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Agent Scores Overview */}
             <div>
@@ -242,7 +244,7 @@ export default function EnhancedAnalysisReport({
                           {agent.score}
                         </span>
                         <span className="text-white/60 text-sm">
-                          置信度 {agent.confidence}%
+                          置信度 {agent.confidence?.toFixed(1) || 0}%
                         </span>
                       </div>
                     </div>

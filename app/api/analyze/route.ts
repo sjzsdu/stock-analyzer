@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import StockBasic from '@/models/StockBasic';
 import StockAnalysis from '@/models/StockAnalysis';
+import UserAnalysisHistory from '@/models/UserAnalysisHistory';
+import mongoose from 'mongoose';
 
 export async function POST(request: NextRequest) {
   try {
@@ -79,7 +83,8 @@ export async function POST(request: NextRequest) {
         headers: { 'Content-Type': 'application/json' },
         // 注意：Python 服务使用 snake_case，所以字段名用 stock_data
         body: JSON.stringify({ symbol: symbolStr, stock_data: stockData }),
-        signal: AbortSignal.timeout(300000) // 5分钟超时（AI分析可能需要较长时间）
+        // 增加超时时间到 8 分钟（AI分析可能需要较长时间）
+        signal: AbortSignal.timeout(480000)
       });
       
       if (!analyzeResponse.ok) {
@@ -147,11 +152,61 @@ export async function POST(request: NextRequest) {
       } : {})
     };
     
+    let savedAnalysisId = null;
+    
     try {
       const stockAnalysis = new StockAnalysis(finalAnalysis);
       await stockAnalysis.save();
+      savedAnalysisId = stockAnalysis._id.toString();
+      console.log(`[${new Date().toISOString()}] 分析结果已保存到全局表: ${savedAnalysisId}`);
     } catch (error) {
       console.error('保存分析结果失败:', error);
+    }
+    
+    // 保存到用户分析历史（如果用户已登录）
+    try {
+      const session = await getServerSession(authOptions);
+      console.log(`[${new Date().toISOString()}] Session检查:`, {
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        hasUserId: !!session?.user?.id,
+        userId: session?.user?.id
+      });
+      
+      if (session?.user?.id && savedAnalysisId) {
+        try {
+          const userHistory = await UserAnalysisHistory.create({
+            userId: new mongoose.Types.ObjectId(session.user.id),
+            symbol: symbolStr.toUpperCase(),
+            analysisDate: new Date(),
+            analysisType: 'daily',
+            aiModel: {
+              provider: 'deepseek',
+              modelName: analysisData.model || 'deepseek-chat',
+            },
+            result: {
+              overallScore: analysisData.overallScore || 0,
+              recommendation: analysisData.recommendation || 'hold',
+              summary: analysisData.executiveSummary || analysisData.summary || '',
+              keyFactors: analysisData.keyFactors || [],
+            },
+            cache: {
+              isCached: false,
+              cacheExpiry: new Date(),  // 修复：不能为null，设置为当前时间
+              originalAnalysisId: savedAnalysisId,
+            },
+            isFavorite: false,
+            tags: [],
+          });
+          console.log(`[${new Date().toISOString()}] 分析结果已保存到用户历史: ${userHistory._id}`);
+        } catch (createError) {
+          console.error('创建用户历史记录失败:', createError);
+        }
+      } else if (!session?.user?.id) {
+        console.log(`[${new Date().toISOString()}] 用户未登录或userId为空，仅保存到全局表`);
+      }
+    } catch (error) {
+      console.error('获取session或保存用户分析历史失败:', error);
     }
     
     console.log(`[${new Date().toISOString()}] 分析完成并保存`);
