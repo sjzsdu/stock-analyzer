@@ -2,64 +2,269 @@
 CrewAI多Agent分析模块
 使用 CrewAI 内置的 LLM 配置方式
 集成增强版分析Prompt模板
+支持多 LLM 提供商自动切换
 """
 
-import os
 import litellm
-from typing import Dict, Any, List, Optional
+from typing import Dict, List, Optional, Tuple
 from .enhanced_prompts import (
     get_agent_prompt,
     parse_analysis_output,
     format_analysis_result,
 )
+from utils.config import config, LLM_PROVIDERS
 
 
-def get_llm_config(temperature: float = 0.7) -> Dict[str, Any]:
-    """获取 DeepSeek LLM 配置"""
-    api_key = os.getenv("DEEPSEEK_API_KEY")
-    if not api_key or api_key == "sk-your_deepseek_api_key_here":
+# 默认温度配置
+AGENT_TEMPERATURES = {
+    "value": 0.5,
+    "technical": 0.3,
+    "growth": 0.6,
+    "fundamental": 0.5,
+    "risk": 0.4,
+    "macro": 0.5,
+    "synthesizer": 0.3,
+}
+
+# Agent 角色定义
+AGENT_DEFINITIONS = {
+    "value": {
+        "role": "Value Investor",
+        "goal": "Analyze stock valuation and identify undervalued opportunities",
+        "backstory": "Expert value investor following Warren Buffett's philosophy.",
+    },
+    "technical": {
+        "role": "Technical Analyst",
+        "goal": "Analyze price patterns and technical indicators",
+        "backstory": "20 years of technical analysis experience.",
+    },
+    "growth": {
+        "role": "Growth Stock Analyst",
+        "goal": "Identify high-growth companies",
+        "backstory": "Specialize in finding next big winners.",
+    },
+    "fundamental": {
+        "role": "Fundamental Analyst",
+        "goal": "Evaluate company fundamentals",
+        "backstory": "Analyze business models and competitive advantages.",
+    },
+    "risk": {
+        "role": "Risk Analyst",
+        "goal": "Identify and assess risks",
+        "backstory": "Professional risk manager with systematic approach.",
+    },
+    "macro": {
+        "role": "Macro Economist",
+        "goal": "Analyze macroeconomic factors",
+        "backstory": "PhD in economics, 15 years experience.",
+    },
+    "synthesizer": {
+        "role": "Chief Investment Analyst",
+        "goal": "Synthesize all analyses",
+        "backstory": "Chief investment strategist at top-tier firm.",
+    },
+}
+
+
+class UnifiedLLM:
+    """统一 LLM 包装类，支持多个提供商和自动故障转移"""
+
+    # 备用提供商列表（按优先级排序）
+    FALLBACK_PROVIDERS = ["deepseek", "zhipu", "qwen", "minimax"]
+
+    def __init__(self, temperature: float = 0.7, fallback: bool = True):
+        """
+        初始化统一 LLM 包装类
+
+        Args:
+            temperature: 温度参数 (0.0-2.0)
+            fallback: 是否启用故障转移
+        """
+        self.temperature = temperature
+        self.fallback = fallback
+        self._config = config()
+        self._init_provider()
+
+    def _init_provider(self, preferred_provider: Optional[str] = None) -> bool:
+        """
+        初始化提供商配置
+
+        Args:
+            preferred_provider: 首选提供商
+
+        Returns:
+            是否初始化成功
+        """
+        # 确定要尝试的提供商列表
+        if preferred_provider:
+            providers_to_try = [preferred_provider]
+            if self.fallback:
+                providers_to_try.extend(
+                    [p for p in self.FALLBACK_PROVIDERS if p != preferred_provider]
+                )
+        else:
+            providers_to_try = (
+                self.FALLBACK_PROVIDERS
+                if self.fallback
+                else [self._config.LLM_PROVIDER]
+            )
+
+        for provider_id in providers_to_try:
+            if provider_id not in LLM_PROVIDERS:
+                continue
+
+            provider_config = LLM_PROVIDERS[provider_id]
+            api_key = self._get_api_key(provider_id)
+
+            if not api_key:
+                continue
+
+            self.provider = provider_id
+            self.model = provider_config["models"][0]  # 使用第一个模型
+            self.api_key = api_key
+            self.api_base = provider_config["api_base"]
+
+            # 验证配置
+            is_valid, _, message = self._config.validate_llm_config()
+            if is_valid:
+                print(
+                    f"[UnifiedLLM] 使用提供商: {provider_config['name']} ({self.model})"
+                )
+                return True
+
         raise ValueError(
-            "❌ DEEPSEEK_API_KEY 未配置。请在 python-service/.env 文件中设置有效的 API key。\n"
-            "   获取 API key: https://platform.deepseek.com/\n"
-            "   配置示例: DEEPSEEK_API_KEY=sk-xxxxx"
+            f"无法找到可用的 LLM 提供商。所有提供商均未配置有效的 API Key。"
         )
 
-    return {
-        "model": "deepseek/deepseek-chat",
-        "api_key": api_key,
-        "api_base": "https://api.deepseek.com/v1",
-        "temperature": temperature,
-        "max_tokens": 2000,
-    }
-
-
-class DeepSeekLLM:
-    """DeepSeek LLM 包装类，供 CrewAI 使用"""
-
-    def __init__(self, temperature: float = 0.7):
-        self.temperature = temperature
-        self.api_key = os.getenv("DEEPSEEK_API_KEY")
-        self.model = "deepseek/deepseek-chat"
-        self.api_base = "https://api.deepseek.com/v1"
-
-        if not self.api_key or self.api_key == "sk-your_deepseek_api_key_here":
-            raise ValueError("DEEPSEEK_API_KEY 未配置")
+    def _get_api_key(self, provider_id: str) -> Optional[str]:
+        """获取指定提供商的 API Key"""
+        env_key = LLM_PROVIDERS[provider_id]["env_key"]
+        return (
+            self._config.LLM_API_KEY
+            if provider_id == self._config.LLM_PROVIDER
+            else None
+        )
 
     def call(self, messages: List[Dict[str, str]]) -> str:
-        """调用 DeepSeek API"""
+        """调用 LLM API"""
         if not messages:
             return "无法生成分析：缺少输入消息"
 
-        # 调用 litellm
-        response = litellm.completion(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-            api_key=self.api_key,
-            api_base=self.api_base,
+        try:
+            response = litellm.completion(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                api_key=self.api_key,
+                api_base=self.api_base,
+            )
+            return response["choices"][0]["message"]["content"]
+
+        except litellm.exceptions.RateLimitError as e:
+            print(f"[UnifiedLLM] 速率限制: {e}")
+            if self.fallback:
+                return self._call_with_fallback(messages, "rate_limit")
+            raise
+
+        except litellm.exceptions.APIConnectionError as e:
+            print(f"[UnifiedLLM] API 连接错误: {e}")
+            if self.fallback:
+                return self._call_with_fallback(messages, "connection_error")
+            raise
+
+        except Exception as e:
+            print(f"[UnifiedLLM] 调用错误: {e}")
+            raise
+
+    def _call_with_fallback(
+        self, messages: List[Dict[str, str]], error_type: str
+    ) -> str:
+        """
+        使用备用提供商调用 LLM
+
+        Args:
+            messages: 消息列表
+            error_type: 错误类型
+
+        Returns:
+            LLM 响应内容
+        """
+        print(f"[UnifiedLLM] 尝试故障转移 (错误类型: {error_type})")
+
+        # 排除当前提供商
+        available_providers = [p for p in self.FALLBACK_PROVIDERS if p != self.provider]
+
+        for fallback_provider in available_providers:
+            if fallback_provider not in LLM_PROVIDERS:
+                continue
+
+            provider_config = LLM_PROVIDERS[fallback_provider]
+            env_key = provider_config["env_key"]
+            api_key = (
+                self._config.LLM_API_KEY
+                if fallback_provider == self._config.LLM_PROVIDER
+                else None
+            )
+
+            if not api_key:
+                continue
+
+            try:
+                print(f"[UnifiedLLM] 切换到备用提供商: {provider_config['name']}")
+                response = litellm.completion(
+                    model=provider_config["models"][0],
+                    messages=messages,
+                    temperature=self.temperature,
+                    api_key=api_key,
+                    api_base=provider_config["api_base"],
+                )
+                print(f"[UnifiedLLM] 备用提供商 {provider_config['name']} 调用成功")
+                return response["choices"][0]["message"]["content"]
+
+            except Exception as e:
+                print(f"[UnifiedLLM] 备用提供商 {provider_config['name']} 失败: {e}")
+                continue
+
+        # 所有提供商都失败
+        return f"无法生成分析：所有 LLM 提供商均失败。请检查 API Key 配置。"
+
+    def get_provider_info(self) -> Dict:
+        """获取当前提供商信息"""
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "api_base": self.api_base,
+            "temperature": self.temperature,
+            "fallback_enabled": self.fallback,
+        }
+
+
+# 保持向后兼容
+DeepSeekLLM = UnifiedLLM
+
+
+def create_agents() -> list:
+    """创建所有分析 Agent"""
+    from crewai import Agent
+
+    cfg = config()
+    agents = []
+    for agent_type in cfg.AGENT_ROLES:
+        definition = AGENT_DEFINITIONS.get(agent_type, {})
+        temperature = AGENT_TEMPERATURES.get(agent_type, 0.5)
+
+        agents.append(
+            Agent(
+                role=str(definition.get("role", agent_type.title())),
+                goal=str(definition.get("goal", "")),
+                backstory=str(definition.get("backstory", "")),
+                verbose=True,
+                llm=DeepSeekLLM(temperature),
+                allow_delegation=False,
+            )
         )
 
-        return response["choices"][0]["message"]["content"]
+    return agents
 
 
 def run_crew_analysis(symbol: str, stock_data: dict) -> dict:
@@ -70,81 +275,18 @@ def run_crew_analysis(symbol: str, stock_data: dict) -> dict:
     try:
         print(f"[CrewAI] 开始多Agent分析: {symbol}")
 
-        # 创建 LLM 实例
-        llm_value = DeepSeekLLM(0.5)
-        llm_technical = DeepSeekLLM(0.3)
-        llm_growth = DeepSeekLLM(0.6)
-        llm_fundamental = DeepSeekLLM(0.5)
-        llm_risk = DeepSeekLLM(0.4)
-        llm_macro = DeepSeekLLM(0.5)
-        llm_synthesizer = DeepSeekLLM(0.3)
+        # 创建 Agent
+        agents = create_agents()
 
         # 格式化数据
         data_summary = format_data_summary(stock_data)
         kline_summary = format_kline_summary(stock_data.get("kline", []))
 
-        # 创建 Agent
-        agents = [
-            Agent(
-                role="Value Investor",
-                goal="Analyze stock valuation and identify undervalued opportunities",
-                backstory="Expert value investor following Warren Buffett's philosophy.",
-                verbose=True,
-                llm=llm_value,
-                allow_delegation=False,
-            ),
-            Agent(
-                role="Technical Analyst",
-                goal="Analyze price patterns and technical indicators",
-                backstory="20 years of technical analysis experience.",
-                verbose=True,
-                llm=llm_technical,
-                allow_delegation=False,
-            ),
-            Agent(
-                role="Growth Stock Analyst",
-                goal="Identify high-growth companies",
-                backstory="Specialize in finding next big winners.",
-                verbose=True,
-                llm=llm_growth,
-                allow_delegation=False,
-            ),
-            Agent(
-                role="Fundamental Analyst",
-                goal="Evaluate company fundamentals",
-                backstory="Analyze business models and competitive advantages.",
-                verbose=True,
-                llm=llm_fundamental,
-                allow_delegation=False,
-            ),
-            Agent(
-                role="Risk Analyst",
-                goal="Identify and assess risks",
-                backstory="Professional risk manager with systematic approach.",
-                verbose=True,
-                llm=llm_risk,
-                allow_delegation=False,
-            ),
-            Agent(
-                role="Macro Economist",
-                goal="Analyze macroeconomic factors",
-                backstory="PhD in economics, 15 years experience.",
-                verbose=True,
-                llm=llm_macro,
-                allow_delegation=False,
-            ),
-            Agent(
-                role="Chief Investment Analyst",
-                goal="Synthesize all analyses",
-                backstory="Chief investment strategist at top-tier firm.",
-                verbose=True,
-                llm=llm_synthesizer,
-                allow_delegation=False,
-            ),
-        ]
-
         # 创建任务
-        tasks = create_tasks(symbol, stock_data, agents, data_summary, kline_summary)
+        stock_name = stock_data.get("basic", {}).get("name", symbol)
+        tasks = create_tasks(
+            symbol, stock_name, stock_data, agents, data_summary, kline_summary
+        )
 
         # 创建 Crew
         crew = Crew(
@@ -225,23 +367,17 @@ def format_industry_data(stock_data: dict) -> str:
 
 
 def create_tasks(
-    symbol: str, stock_data: dict, agents: list, data_summary: str, kline_summary: str
-):
+    symbol: str,
+    stock_name: str,
+    stock_data: dict,
+    agents: list,
+    data_summary: str,
+    kline_summary: str,
+) -> list:
     """创建分析任务 - 使用增强版Prompt模板"""
     from crewai import Task
 
-    (
-        value_agent,
-        technical_agent,
-        growth_agent,
-        fundamental_agent,
-        risk_agent,
-        macro_agent,
-        synthesizer,
-    ) = agents
-
-    # 获取股票基本信息
-    stock_name = stock_data.get("basic", {}).get("name", symbol)
+    cfg = config()
 
     # 准备数据上下文
     data_context = f"""
@@ -258,177 +394,37 @@ K线数据摘要:
 {format_industry_data(stock_data)}
 """
 
-    return [
-        Task(
-            description=get_agent_prompt("value", stock_name, symbol)
-            + f"""
+    # Agent 索引映射
+    agent_map = {
+        "value": 0,
+        "technical": 1,
+        "growth": 2,
+        "fundamental": 3,
+        "risk": 4,
+        "macro": 5,
+        "synthesizer": 6,
+    }
+
+    tasks = []
+    for agent_type in cfg.AGENT_ROLES:
+        agent_index = agent_map.get(agent_type, 0)
+        agent = agents[agent_index]
+
+        tasks.append(
+            Task(
+                description=get_agent_prompt(agent_type, stock_name, symbol)
+                + f"""
 
 数据上下文:
 {data_context}
 
-请严格按照模板格式输出估值分析结果。""",
-            expected_output="完整的估值分析报告，包含DCF、相对估值、置信度评估等",
-            agent=value_agent,
-        ),
-        Task(
-            description=get_agent_prompt("technical", stock_name, symbol)
-            + f"""
+请严格按照模板格式输出{agent_type}分析结果。""",
+                expected_output=f"完整的{agent_type}分析报告",
+                agent=agent,
+            )
+        )
 
-数据上下文:
-{data_context}
-
-请严格按照模板格式输出技术分析结果。""",
-            expected_output="完整的技术分析报告，包含趋势、价位、指标、形态分析等",
-            agent=technical_agent,
-        ),
-        Task(
-            description=get_agent_prompt("growth", stock_name, symbol)
-            + f"""
-
-数据上下文:
-{data_context}
-
-请严格按照模板格式输出成长分析结果。""",
-            expected_output="完整的成长分析报告，包含历史增长、质量评估、可持续性等",
-            agent=growth_agent,
-        ),
-        Task(
-            description=get_agent_prompt("fundamental", stock_name, symbol)
-            + f"""
-
-数据上下文:
-{data_context}
-
-请严格按照模板格式输出基本面分析结果。""",
-            expected_output="完整的基本面分析报告，包含盈利能力、运营效率、资产质量等",
-            agent=fundamental_agent,
-        ),
-        Task(
-            description=get_agent_prompt("risk", stock_name, symbol)
-            + f"""
-
-数据上下文:
-{data_context}
-
-请严格按照模板格式输出风险评估结果。""",
-            expected_output="完整的风险评估报告，包含市场风险、行业风险、公司特有风险等",
-            agent=risk_agent,
-        ),
-        Task(
-            description=get_agent_prompt("macro", stock_name, symbol)
-            + f"""
-
-数据上下文:
-{data_context}
-
-请严格按照模板格式输出宏观分析结果。""",
-            expected_output="完整的宏观分析报告，包含经济周期、利率、通胀、政策影响等",
-            agent=macro_agent,
-        ),
-        Task(
-            description=get_agent_prompt("synthesizer", stock_name, symbol)
-            + """
-
-请基于以上各Agent的分析结果，综合形成最终投资建议。
-
-要求：
-1. 整合所有维度的分析结果
-2. 计算加权综合评分
-3. 识别一致性和分歧点
-4. 给出明确的推荐操作
-5. 严格按照模板格式输出
-
-请严格按照模板格式输出综合分析报告。""",
-            expected_output="完整的综合分析报告，包含执行摘要、各维度评分、核心逻辑、操作建议等",
-            agent=synthesizer,
-        ),
-    ]
-
-    return [
-        Task(
-            description=get_agent_prompt("value", stock_name, symbol)
-            + f"""
-
-数据上下文:
-{data_context}
-
-请严格按照模板格式输出估值分析结果。""",
-            expected_output="完整的估值分析报告，包含DCF、相对估值、置信度评估等",
-            agent=value_agent,
-        ),
-        Task(
-            description=get_agent_prompt("technical", stock_name, symbol)
-            + f"""
-
-数据上下文:
-{data_context}
-
-请严格按照模板格式输出技术分析结果。""",
-            expected_output="完整的技术分析报告，包含趋势、价位、指标、形态分析等",
-            agent=technical_agent,
-        ),
-        Task(
-            description=get_agent_prompt("growth", stock_name, symbol)
-            + f"""
-
-数据上下文:
-{data_context}
-
-请严格按照模板格式输出成长分析结果。""",
-            expected_output="完整的成长分析报告，包含历史增长、质量评估、可持续性等",
-            agent=growth_agent,
-        ),
-        Task(
-            description=get_agent_prompt("fundamental", stock_name, symbol)
-            + f"""
-
-数据上下文:
-{data_context}
-
-请严格按照模板格式输出基本面分析结果。""",
-            expected_output="完整的基本面分析报告，包含盈利能力、运营效率、资产质量等",
-            agent=fundamental_agent,
-        ),
-        Task(
-            description=get_agent_prompt("risk", stock_name, symbol)
-            + f"""
-
-数据上下文:
-{data_context}
-
-请严格按照模板格式输出风险评估结果。""",
-            expected_output="完整的风险评估报告，包含市场风险、行业风险、公司特有风险等",
-            agent=risk_agent,
-        ),
-        Task(
-            description=get_agent_prompt("macro", stock_name, symbol)
-            + f"""
-
-数据上下文:
-{data_context}
-
-请严格按照模板格式输出宏观分析结果。""",
-            expected_output="完整的宏观分析报告，包含经济周期、利率、通胀、政策影响等",
-            agent=macro_agent,
-        ),
-        Task(
-            description=get_agent_prompt("synthesizer", stock_name, symbol)
-            + """
-
-请基于以上各Agent的分析结果，综合形成最终投资建议。
-
-要求：
-1. 整合所有维度的分析结果
-2. 计算加权综合评分
-3. 识别一致性和分歧点
-4. 给出明确的推荐操作
-5. 严格按照模板格式输出
-
-请严格按照模板格式输出综合分析报告。""",
-            expected_output="完整的综合分析报告，包含执行摘要、各维度评分、核心逻辑、操作建议等",
-            agent=synthesizer,
-        ),
-    ]
+    return tasks
 
 
 def parse_analysis_result(result, symbol: str, stock_data: dict) -> dict:
@@ -478,6 +474,8 @@ def parse_analysis_result(result, symbol: str, stock_data: dict) -> dict:
 
 def ensure_complete_structure(analysis: dict, symbol: str, stock_data: dict) -> dict:
     """确保结构完整"""
+    cfg = config()
+
     if "roleAnalysis" not in analysis or not analysis["roleAnalysis"]:
         analysis["roleAnalysis"] = [
             {
@@ -525,24 +523,16 @@ def ensure_complete_structure(analysis: dict, symbol: str, stock_data: dict) -> 
 
     if "overallScore" not in analysis:
         scores = [r.get("score", 70) for r in analysis["roleAnalysis"]]
-        weights = [0.25, 0.15, 0.20, 0.15, 0.15, 0.10]
-        analysis["overallScore"] = sum(s * w for s, w in zip(scores, weights))
+        analysis["overallScore"] = sum(
+            s * cfg.get_agent_weight(r.get("role", "value"))
+            for s, r in zip(scores, analysis["roleAnalysis"])
+        )
 
     if "recommendation" not in analysis:
-        score = analysis["overallScore"]
-        if score >= 85:
-            analysis["recommendation"] = "strong_buy"
-        elif score >= 75:
-            analysis["recommendation"] = "buy"
-        elif score >= 60:
-            analysis["recommendation"] = "hold"
-        elif score >= 50:
-            analysis["recommendation"] = "wait"
-        else:
-            analysis["recommendation"] = "sell"
+        analysis["recommendation"] = cfg.get_recommendation(analysis["overallScore"])
 
     if "confidence" not in analysis:
-        analysis["confidence"] = 75.0
+        analysis["confidence"] = cfg.ANALYSIS_DEFAULT_CONFIDENCE
 
     if "summary" not in analysis:
         rec_map = {
@@ -557,7 +547,7 @@ def ensure_complete_structure(analysis: dict, symbol: str, stock_data: dict) -> 
         )
 
     analysis["model"] = "CrewAI + DeepSeek"
-    analysis["processingTime"] = 30.0
+    analysis["processingTime"] = cfg.ANALYSIS_DEFAULT_PROCESSING_TIME
     analysis["tokenUsage"] = {"input": 15000, "output": 8000}
 
     return analysis
@@ -583,6 +573,8 @@ def extract_from_text(text: str, symbol: str, stock_data: dict) -> dict:
     recommendation = (
         rec_map.get(rec_match.group(1).lower(), "hold") if rec_match else "hold"
     )
+
+    cfg = config()
 
     return {
         "overallScore": overall_score,
@@ -630,6 +622,6 @@ def extract_from_text(text: str, symbol: str, stock_data: dict) -> dict:
         "risks": ["行业政策变化", "市场竞争加剧", "宏观经济波动"],
         "opportunities": ["行业增长空间", "技术创新驱动", "市场份额提升"],
         "model": "CrewAI + DeepSeek",
-        "processingTime": 30.0,
+        "processingTime": cfg.ANALYSIS_DEFAULT_PROCESSING_TIME,
         "tokenUsage": {"input": 15000, "output": 8000},
     }

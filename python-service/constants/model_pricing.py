@@ -4,7 +4,13 @@
 所有AI模型的价格配置（每百万token）
 来源: 各大模型官方定价
 
-@module constants.model_pricing
+支持的提供商:
+- DeepSeek (deepseek-chat)
+- MiniMax (minimax-m2)
+- 智谱AI (ChatGLM/glm-4)
+- 阿里千问 (Qwen/qwen-turbo/qwen-plus/qwen-max)
+- OpenAI (GPT-4o)
+- Anthropic (Claude)
 """
 
 # 模型提供商配置
@@ -12,19 +18,69 @@ MODEL_PROVIDERS = {
     "deepseek": {
         "name": "DeepSeek",
         "models": {
-            "deepseek-v3": {
-                "name": "DeepSeek V3",
-                "pricing": {"input": 0.28, "output": 0.42},
+            "deepseek-chat": {
+                "name": "DeepSeek Chat",
+                "pricing": {"input": 0.28, "output": 1.10},  # 更新后的价格
                 "strengths": ["中文理解", "成本效益", "推理能力"],
                 "max_tokens": 128000,
                 "context_window": 128000,
             },
-            "deepseek-v3-reasoner": {
-                "name": "DeepSeek V3 Reasoner",
-                "pricing": {"input": 0.55, "output": 2.19},
-                "strengths": ["深度推理", "复杂分析", "长文本"],
+        },
+    },
+    "minimax": {
+        "name": "MiniMax",
+        "models": {
+            "minimax-m2": {
+                "name": "MiniMax M2",
+                "pricing": {"input": 0.01, "output": 0.01},  # 约合 10元/百万token
+                "strengths": ["超低成本", "快速响应", "中文优化"],
+                "max_tokens": 8192,
+                "context_window": 16384,
+            },
+        },
+    },
+    "zhipu": {
+        "name": "智谱AI (ChatGLM)",
+        "models": {
+            "glm-4": {
+                "name": "GLM-4",
+                "pricing": {"input": 0.50, "output": 1.00},  # 约合 50-100元/百万token
+                "strengths": ["中文理解", "长文本", "数学推理"],
                 "max_tokens": 128000,
                 "context_window": 128000,
+            },
+            "glm-4v": {
+                "name": "GLM-4V (多模态)",
+                "pricing": {"input": 0.50, "output": 1.00},
+                "strengths": ["多模态理解", "图表分析"],
+                "max_tokens": 128000,
+                "context_window": 128000,
+            },
+        },
+    },
+    "qwen": {
+        "name": "阿里千问 (Qwen)",
+        "models": {
+            "qwen-turbo": {
+                "name": "Qwen Turbo",
+                "pricing": {"input": 0.20, "output": 0.60},  # 约合 20-60元/百万token
+                "strengths": ["快速响应", "成本效益", "中文优化"],
+                "max_tokens": 16000,
+                "context_window": 16000,
+            },
+            "qwen-plus": {
+                "name": "Qwen Plus",
+                "pricing": {"input": 0.40, "output": 1.20},  # 约合 40-120元/百万token
+                "strengths": ["增强推理", "长上下文"],
+                "max_tokens": 64000,
+                "context_window": 64000,
+            },
+            "qwen-max": {
+                "name": "Qwen Max",
+                "pricing": {"input": 1.00, "output": 3.00},  # 约合 100-300元/百万token
+                "strengths": ["最强性能", "复杂推理", "高质量输出"],
+                "max_tokens": 64000,
+                "context_window": 64000,
             },
         },
     },
@@ -68,65 +124,18 @@ MODEL_PROVIDERS = {
     },
 }
 
-# 订阅层级对应的模型访问权限
-TIER_MODEL_ACCESS = {
-    "free": ["deepseek-v3"],
-    "basic": ["deepseek-v3", "deepseek-v3-reasoner"],
-    "pro": ["deepseek-v3", "deepseek-v3-reasoner", "gpt-4o-mini"],
-    "enterprise": [
-        "deepseek-v3",
-        "deepseek-v3-reasoner",
-        "gpt-4o",
-        "gpt-4o-mini",
-        "claude-3-5-sonnet",
-        "claude-3-5-haiku",
-    ],
-}
-
-# 默认模型选择
-DEFAULT_MODEL_SELECTION = {
-    "free": "deepseek-v3",
-    "basic": "deepseek-v3",
-    "pro": "deepseek-v3-reasoner",
-    "enterprise": "deepseek-v3-reasoner",
-}
-
-# 分析类型推荐模型
-ANALYSIS_TYPE_RECOMMENDATIONS = {
-    "value": {
-        "recommended": "deepseek-v3-reasoner",
-        "fallback": "deepseek-v3",
-        "reason": "深度推理模型更适合估值分析",
-    },
-    "technical": {
-        "recommended": "deepseek-v3",
-        "fallback": "gpt-4o-mini",
-        "reason": "技术分析相对标准化，基础模型足够",
-    },
-    "growth": {
-        "recommended": "deepseek-v3-reasoner",
-        "fallback": "deepseek-v3",
-        "reason": "成长分析需要深度推理",
-    },
-    "fundamental": {
-        "recommended": "deepseek-v3-reasoner",
-        "fallback": "deepseek-v3",
-        "reason": "基本面分析需要详细的数据推理",
-    },
-    "risk": {
-        "recommended": "claude-3-5-sonnet",
-        "fallback": "deepseek-v3-reasoner",
-        "reason": "风险评估需要综合分析和安全性",
-    },
-    "macro": {
-        "recommended": "deepseek-v3-reasoner",
-        "fallback": "claude-3-5-sonnet",
-        "reason": "宏观分析需要长文本理解和推理",
-    },
+# 推荐的默认模型（按提供商）
+RECOMMENDED_MODELS = {
+    "deepseek": "deepseek-chat",
+    "minimax": "minimax-m2",
+    "zhipu": "glm-4",
+    "qwen": "qwen-max",
+    "openai": "gpt-4o",
+    "anthropic": "claude-3-5-sonnet",
 }
 
 
-def get_model_info(model_name: str) -> dict:
+def get_model_info(model_name: str) -> dict | None:
     """获取指定模型的详细信息"""
     for provider_key, provider_data in MODEL_PROVIDERS.items():
         if model_name in provider_data["models"]:
@@ -139,10 +148,33 @@ def get_model_info(model_name: str) -> dict:
     return None
 
 
-def get_available_models_for_tier(tier: str) -> list:
-    """获取指定订阅层级可用的模型列表"""
-    model_names = TIER_MODEL_ACCESS.get(tier, TIER_MODEL_ACCESS["free"])
-    return [get_model_info(model_name) for model_name in model_names]
+def get_provider_for_model(model_name: str) -> str | None:
+    """获取模型所属的提供商"""
+    for provider_key, provider_data in MODEL_PROVIDERS.items():
+        if model_name in provider_data["models"]:
+            return provider_key
+    return None
+
+
+def get_available_providers() -> list:
+    """获取所有可用的提供商"""
+    return list(MODEL_PROVIDERS.keys())
+
+
+def get_available_models() -> list:
+    """获取所有可用的模型"""
+    models = []
+    for provider, data in MODEL_PROVIDERS.items():
+        for model_name in data["models"]:
+            models.append(
+                {
+                    "id": model_name,
+                    "name": data["models"][model_name]["name"],
+                    "provider": provider,
+                    "provider_name": data["name"],
+                }
+            )
+    return models
 
 
 def calculate_cost(model_name: str, input_tokens: int, output_tokens: int) -> dict:
@@ -162,42 +194,24 @@ def calculate_cost(model_name: str, input_tokens: int, output_tokens: int) -> di
         "input_cost": round(input_cost, 6),
         "output_cost": round(output_cost, 6),
         "total_cost": round(input_cost + output_cost, 6),
-        "currency": "USD",
+        "currency": "CNY",  # 国产模型使用人民币计价
     }
 
 
-def get_optimal_model_for_analysis(
-    analysis_type: str, user_tier: str, user_preference: str = None
-) -> str:
-    """
-    获取分析类型的最佳模型
+def get_recommended_model(provider: str) -> str:
+    """获取指定提供商的推荐模型"""
+    return RECOMMENDED_MODELS.get(provider, "")
 
-    Args:
-        analysis_type: 分析类型
-        user_tier: 用户订阅层级
-        user_preference: 用户偏好设置
 
-    Returns:
-        最佳模型名称
-    """
-    # 如果用户有偏好且有权访问，返回用户偏好
-    if user_preference:
-        available_models = TIER_MODEL_ACCESS.get(user_tier, [])
-        if user_preference in available_models:
-            return user_preference
+# 成本对比示例
+COST_COMPARISON = """
+## 各模型成本对比 (每百万token)
 
-    # 根据分析类型推荐
-    recommendation = ANALYSIS_TYPE_RECOMMENDATIONS.get(analysis_type, {})
-    recommended_model = recommendation.get("recommended", "deepseek-v3")
-
-    # 检查用户是否有权限访问推荐模型
-    available_models = TIER_MODEL_ACCESS.get(user_tier, [])
-    if recommended_model in available_models:
-        return recommended_model
-
-    # 回退到可用的默认模型
-    for model in available_models:
-        return model
-
-    # 最坏情况：返回免费版模型
-    return "deepseek-v3"
+| 提供商 | 模型 | 输入 (¥) | 输出 (¥) | 特点 |
+|--------|------|----------|----------|------|
+| DeepSeek | deepseek-chat | 0.28 | 1.10 | 性价比最高 |
+| MiniMax | minimax-m2 | 0.01 | 0.01 | 超低成本 |
+| 智谱AI | glm-4 | 0.50 | 1.00 | 长文本优秀 |
+| 阿里千问 | qwen-turbo | 0.20 | 0.60 | 快速响应 |
+| 阿里千问 | qwen-max | 1.00 | 3.00 | 最强性能 |
+"""
