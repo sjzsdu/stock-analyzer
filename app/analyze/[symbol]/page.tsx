@@ -2,7 +2,7 @@
 import { useEffect, useState, use, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { AlertTriangle, Clock, Home, Search, RefreshCw, BarChart3, Lightbulb, BrainCircuit, Check, Zap, Database, TrendingUp, AlertCircle, Sparkles, Globe } from 'lucide-react';
+import { AlertTriangle, Clock, Home, Search, RefreshCw, BarChart3, Check, AlertCircle, Brain } from 'lucide-react';
 import StockKLineChart from '@/components/StockKLineChart';
 import StockOverviewCard from '@/components/StockOverviewCard';
 import AnalysisSummary from '@/components/AnalysisSummary';
@@ -12,7 +12,6 @@ import EnhancedAnalysisReport from '@/components/analysis/EnhancedAnalysisReport
 import TechnicalIndicators from '@/components/stock/TechnicalIndicators';
 import NewsFeed from '@/components/stock/NewsFeed';
 import DataQualityIndicator from '@/components/stock/DataQualityIndicator';
-import { useSSEProgress } from '@/app/hooks/useSSEProgress';
 
 const roleNames: Record<string, string> = {
   value: '价值投资者',
@@ -32,26 +31,6 @@ const roleColors: Record<string, string> = {
   macro: 'from-cyan-500 to-cyan-600'
 };
 
-const STAGE_CONFIG: Record<string, { icon: typeof Zap; label: string; color: string }> = {
-  starting: { icon: Zap, label: '启动分析', color: 'text-yellow-400' },
-  check_cache: { icon: Database, label: '检查缓存', color: 'text-blue-400' },
-  collect_basic: { icon: Database, label: '采集基本信息', color: 'text-blue-400' },
-  collect_kline: { icon: TrendingUp, label: '采集K线数据', color: 'text-purple-400' },
-  calculate_technical: { icon: TrendingUp, label: '计算技术指标', color: 'text-purple-400' },
-  collect_financial: { icon: Database, label: '采集财务数据', color: 'text-green-400' },
-  collect_news: { icon: Database, label: '采集新闻资讯', color: 'text-cyan-400' },
-  ai_analysis: { icon: BrainCircuit, label: 'AI智能分析', color: 'text-pink-400' },
-  ai_value: { icon: Lightbulb, label: '价值分析', color: 'text-yellow-400' },
-  ai_technical: { icon: TrendingUp, label: '技术分析', color: 'text-purple-400' },
-  ai_growth: { icon: TrendingUp, label: '成长分析', color: 'text-green-400' },
-  ai_fundamental: { icon: BarChart3, label: '基本面分析', color: 'text-orange-400' },
-  ai_risk: { icon: AlertCircle, label: '风险评估', color: 'text-red-400' },
-  ai_macro: { icon: Globe, label: '宏观分析', color: 'text-cyan-400' },
-  synthesize: { icon: Sparkles, label: '综合研判', color: 'text-pink-400' },
-  complete: { icon: Check, label: '分析完成', color: 'text-green-400' },
-  error: { icon: AlertTriangle, label: '分析错误', color: 'text-red-400' },
-};
-
 export default function AnalyzePage({ params }: { params: Promise<{ symbol: string }> }) {
   const resolvedParams = use(params);
   const [loading, setLoading] = useState(true);
@@ -59,59 +38,128 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
   const [error, setError] = useState<string>('');
   const [isExpired, setIsExpired] = useState(false);
   const [ageHours, setAgeHours] = useState(0);
-  const [isAnalyzingResult, setIsAnalyzingResult] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [progress, setProgress] = useState<{ stage: string; progress: number; message: string } | null>(null);
 
   const symbol = decodeURIComponent(resolvedParams.symbol);
   const searchParams = useSearchParams();
   const analysisDate = searchParams.get('date');
 
-  // 使用 ref 存储最新的 analysisDate，避免 useEffect 依赖循环
   const analysisDateRef = useRef(analysisDate);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     analysisDateRef.current = analysisDate;
   }, [analysisDate]);
 
-  const {
-    progress,
-    start: startAnalysis,
-    stop: stopAnalysis,
-    isRunning: isAnalyzing,
-    hasError: hasProgressError,
-    error: progressError
-  } = useSSEProgress({
-    onComplete: (result) => {
-      setData(result);
-      setLoading(false);
-      setIsAnalyzingResult(false);
-    },
-    onError: (err) => {
-      setError(err);
-      setLoading(false);
-      setIsAnalyzingResult(false);
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
     }
-  });
+  }, []);
 
-  const startSSEAnalysis = useCallback(async () => {
+  const startAnalysis = useCallback(async () => {
+    stopPolling();
     setLoading(true);
     setError('');
     setIsExpired(false);
     setData(null);
-    setIsAnalyzingResult(true);
-
-    await startAnalysis(symbol);
-  }, [symbol, startAnalysis]);
-
-  const fetchExistingAnalysis = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    setIsAnalyzingResult(false);
+    setIsAnalyzing(true);
+    setProgress({ stage: 'starting', progress: 0, message: '正在启动分析...' });
 
     try {
-      // 使用 ref 获取最新的 analysisDate
+      const PYTHON_API_URL = process.env.NEXT_PUBLIC_PYTHON_API_URL || 'http://localhost:8000';
+
+      // 启动异步分析
+      const response = await fetch(`${PYTHON_API_URL}/api/analyze/async`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, market: 'A' }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`启动分析失败: ${response.statusText} - ${errText}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || '启动分析失败');
+      }
+
+      const jobId = result.job_id;
+      setProgress({ stage: 'started', progress: 5, message: '正在初始化分析任务...' });
+
+      // 开始轮询进度
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const progressResponse = await fetch(`${PYTHON_API_URL}/api/analyze/progress/${jobId}`);
+          
+          if (!progressResponse.ok) {
+            throw new Error('获取进度失败');
+          }
+
+          const progressData = await progressResponse.json();
+
+          if (progressData.error) {
+            stopPolling();
+            setError(progressData.error);
+            setLoading(false);
+            setIsAnalyzing(false);
+            return;
+          }
+
+          // 更新进度
+          setProgress({
+            stage: progressData.stage || 'unknown',
+            progress: progressData.progress || 0,
+            message: progressData.message || '处理中...'
+          });
+
+          // 检查是否完成
+          if (progressData.status === 'completed') {
+            stopPolling();
+            if (progressData.result) {
+              setData(progressData.result);
+            } else {
+              setError('分析完成但没有返回结果');
+            }
+            setLoading(false);
+            setIsAnalyzing(false);
+          }
+          // 检查是否失败
+          else if (progressData.status === 'failed') {
+            stopPolling();
+            setError(progressData.message || progressData.error || '分析失败');
+            setLoading(false);
+            setIsAnalyzing(false);
+          }
+
+        } catch (err) {
+          console.error('轮询进度失败:', err);
+        }
+      }, 2000); // 每2秒轮询一次
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '启动分析失败';
+      setError(errorMessage);
+      setLoading(false);
+      setIsAnalyzing(false);
+    }
+  }, [symbol, stopPolling]);
+
+  const fetchExistingAnalysis = useCallback(async () => {
+    stopPolling();
+    setLoading(true);
+    setError('');
+    setIsAnalyzing(false);
+    setProgress(null);
+
+    try {
       const currentAnalysisDate = analysisDateRef.current;
       
-      // 构建请求 URL，包含日期参数
       let apiUrl = `/api/analysis/history/${symbol}`;
       if (currentAnalysisDate) {
         apiUrl += `?date=${encodeURIComponent(currentAnalysisDate)}`;
@@ -125,10 +173,9 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
         setIsExpired(result.expired || false);
         setAgeHours(result.ageHours || 0);
         
-        // 如果数据过期，自动重新分析
         if (result.expired) {
           console.log('数据已过期，自动重新分析...');
-          await startSSEAnalysis();
+          await startAnalysis();
           return;
         }
         
@@ -137,156 +184,84 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
       }
 
       console.log('没有历史记录，自动开始分析...');
-      await startSSEAnalysis();
+      await startAnalysis();
 
     } catch (err) {
       console.error('获取历史记录失败:', err);
       console.log('获取历史记录失败，自动开始分析...');
-      await startSSEAnalysis();
+      await startAnalysis();
     }
-  }, [symbol, startSSEAnalysis]); // 只依赖 symbol 和 startSSEAnalysis
+  }, [symbol, startAnalysis, stopPolling]);
 
   useEffect(() => {
-    // 避免无限循环，只在组件挂载时或 symbol 变化时调用
-    fetchExistingAnalysis();
-  }, [symbol]); // 移除 analysisDate 和 fetchExistingAnalysis 依赖
+    let mounted = true;
+    const runFetch = async () => {
+      if (mounted) {
+        await fetchExistingAnalysis();
+      }
+    };
+    runFetch();
+    return () => {
+      mounted = false;
+      stopPolling();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol]);
 
-  const formatElapsedTime = (seconds: number): string => {
-    if (seconds < 60) return `${Math.floor(seconds)}秒`;
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}分${secs}秒`;
-  };
-
-  const calculateETA = (progressValue: number, elapsed: number): string => {
-    if (progressValue <= 0) return '计算中...';
-    const totalEstimated = (elapsed / progressValue) * 100;
-    const remaining = totalEstimated - elapsed;
-    if (remaining <= 0) return '即将完成';
-    return formatElapsedTime(remaining);
-  };
-
-  const isLoadingWithSSE = loading && isAnalyzing;
-
-  if (isLoadingWithSSE && progress) {
-    const elapsed = progress.elapsed_seconds || 0;
-    const eta = calculateETA(progress.progress, elapsed);
-    const currentStageConfig = STAGE_CONFIG[progress.stage] || STAGE_CONFIG.starting;
-    const CurrentIcon = currentStageConfig.icon;
-
+  // 加载中状态
+  if (loading && (isAnalyzing || progress)) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white flex items-center justify-center relative">
-        <div className="fixed inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/2 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
-          <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
-        </div>
-
-        <div className="text-center glass-effect rounded-3xl p-8 max-w-lg w-full mx-4 shadow-2xl relative z-10">
-          <div className="relative w-32 h-32 mx-auto mb-6">
-            <svg className="w-full h-full transform -rotate-90">
-              <circle
-                cx="64"
-                cy="64"
-                r="56"
-                stroke="currentColor"
-                strokeWidth="8"
-                fill="transparent"
-                className="text-white/10"
-              />
-              <circle
-                cx="64"
-                cy="64"
-                r="56"
-                stroke="url(#progressGradient)"
-                strokeWidth="8"
-                fill="transparent"
-                strokeLinecap="round"
-                strokeDasharray={`${progress.progress * 3.52} 352`}
-                className="transition-all duration-500 ease-out"
-              />
-              <defs>
-                <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#3b82f6" />
-                  <stop offset="50%" stopColor="#8b5cf6" />
-                  <stop offset="100%" stopColor="#ec4899" />
-                </linearGradient>
-              </defs>
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-3xl font-bold gradient-text">{progress.progress}%</span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <CurrentIcon className={`w-6 h-6 ${currentStageConfig.color}`} />
-            <span className="text-xl font-bold gradient-text">{progress.message}</span>
-          </div>
-
-          <div className={`text-sm mb-6 ${currentStageConfig.color}`}>
-            {currentStageConfig.label}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
-            <div className="bg-white/5 rounded-xl p-3">
-              <div className="text-white/50 mb-1">已用时间</div>
-              <div className="text-white font-semibold">{formatElapsedTime(elapsed)}</div>
-            </div>
-            <div className="bg-white/5 rounded-xl p-3">
-              <div className="text-white/50 mb-1">预计剩余</div>
-              <div className="text-white font-semibold">{eta}</div>
-            </div>
-          </div>
-
-          <div className="space-y-2 text-sm text-left max-h-48 overflow-y-auto">
-            {Object.entries(STAGE_CONFIG).map(([stage, config]) => {
-              const stageOrder = ['starting', 'check_cache', 'collect_basic', 'collect_kline', 'calculate_technical', 'collect_financial', 'collect_news', 'ai_analysis', 'ai_value', 'ai_technical', 'ai_growth', 'ai_fundamental', 'ai_risk', 'ai_macro', 'synthesize', 'complete'];
-              const stageIndex = stageOrder.indexOf(stage);
-              const progressIndex = stageOrder.indexOf(progress.stage);
-              const isCompleted = stage === 'complete' || stageIndex < progressIndex || (progress.progress >= 100);
-              const isCurrent = stage === progress.stage;
-
-              const StageIcon = config.icon;
-
-              return (
-                <div
-                  key={stage}
-                  className={`flex items-center gap-3 p-2 rounded-lg transition-all ${
-                    isCurrent ? 'bg-white/10 border border-purple-500/30' :
-                    isCompleted ? 'bg-green-500/5' : 'bg-white/5'
-                  }`}
-                >
-                  <StageIcon className={`w-4 h-4 flex-shrink-0 ${
-                    isCompleted ? 'text-green-400' :
-                    isCurrent ? config.color : 'text-white/30'
-                  }`} />
-                  <span className={`${isCompleted ? 'text-white/60' : isCurrent ? 'text-white' : 'text-white/30'}`}>
-                    {config.label}
-                  </span>
-                  {isCompleted && (
-                    <Check className="w-4 h-4 text-green-400 ml-auto" />
-                  )}
+      <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white">
+        <div className="container mx-auto px-4 py-8 relative z-10">
+          <div className="glass-effect rounded-3xl p-8 card-hover max-w-2xl mx-auto">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mb-6">
+                <Brain className="w-10 h-10 text-white" />
+              </div>
+              <h3 className="text-2xl font-bold text-white mb-2">
+                AI 正在分析 {symbol}
+              </h3>
+              <p className="text-white/60 mb-6">
+                {progress?.message || '正在处理...'}
+              </p>
+              
+              <div className="w-full max-w-md mb-6">
+                <div className="flex justify-between text-sm text-white/60 mb-2">
+                  <span>进度</span>
+                  <span>{progress?.progress || 0}%</span>
                 </div>
-              );
-            })}
-          </div>
+                <div className="h-3 bg-white/10 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500"
+                    style={{ width: `${progress?.progress || 0}%` }}
+                  />
+                </div>
+              </div>
 
-          <button
-            onClick={() => {
-              stopAnalysis();
-              setLoading(false);
-            }}
-            className="mt-6 text-white/60 hover:text-white text-sm transition-colors"
-          >
-            取消分析
-          </button>
+              <p className="text-sm text-white/40">
+                AI 分析可能需要 1-3 分钟，请耐心等待...
+              </p>
+
+              <button
+                onClick={() => {
+                  stopPolling();
+                  setLoading(false);
+                  setIsAnalyzing(false);
+                }}
+                className="mt-6 px-6 py-2 bg-white/10 text-white/60 font-medium rounded-xl border border-white/20 hover:bg-white/20 hover:text-white transition-all"
+              >
+                取消分析
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (isAnalyzingResult && (error || hasProgressError)) {
-    const errorMsg = error || progressError || '分析失败，请重试';
-    const isApiKeyError = errorMsg.includes('DEEPSEEK_API_KEY') || errorMsg.includes('API key');
+  // 错误状态
+  if (error && !data) {
+    const isApiKeyError = error.includes('DEEPSEEK_API_KEY') || error.includes('API key');
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white flex items-center justify-center relative">
@@ -303,7 +278,7 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
           <div className="bg-white/5 rounded-xl p-6 mb-6 text-left">
             <p className="text-white/80 text-sm mb-2">错误信息：</p>
             <pre className="text-red-400 text-xs font-mono whitespace-pre-wrap break-all bg-black/20 rounded-lg p-4 max-h-48 overflow-auto">
-              {errorMsg}
+              {error}
             </pre>
           </div>
 
@@ -326,7 +301,7 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
 
           <div className="flex flex-col gap-4">
             <button
-              onClick={startSSEAnalysis}
+              onClick={startAnalysis}
               disabled={isAnalyzing}
               className="w-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 text-white px-8 py-4 rounded-xl font-semibold transition-all button-hover flex items-center justify-center gap-3 shadow-lg shadow-purple-500/25 disabled:opacity-50"
             >
@@ -352,12 +327,28 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
     );
   }
 
-  if (!data && !isAnalyzing && !isLoadingWithSSE) {
+  // 没有数据且不在分析中
+  if (!data && !isAnalyzing) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-500 border-t-transparent mx-auto mb-4"></div>
-          <p className="text-white/60">加载中...</p>
+      <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white">
+        <div className="container mx-auto px-4 py-8 relative z-10">
+          <div className="glass-effect rounded-3xl p-8 card-hover">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mb-4">
+                <AlertCircle className="w-8 h-8 text-white/40" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">暂无分析数据</h3>
+              <p className="text-white/60 mb-6">点击下方按钮开始分析</p>
+              <button
+                onClick={startAnalysis}
+                disabled={isAnalyzing}
+                className="px-6 py-3 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 text-white font-semibold rounded-xl hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 transition-all flex items-center gap-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
+                {isAnalyzing ? '分析中...' : '开始分析'}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -386,7 +377,6 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
     const latest = klineData[klineData.length - 1];
     const previous = klineData[klineData.length - 2] || latest;
 
-    // 处理不同格式的 kline 数据
     const getClosePrice = (item: any) => {
       if (typeof item === 'object' && item !== null) {
         return Number(item.close) || Number(item[4]) || Number(item[2]) || 0;
@@ -476,7 +466,7 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
           </Link>
           <div className="flex items-center gap-3">
             <button
-              onClick={startSSEAnalysis}
+              onClick={startAnalysis}
               disabled={loading || isAnalyzing}
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 text-white font-medium rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -513,7 +503,7 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
               changeAmount={realtimeData.changeAmount}
               previousClose={realtimeData.previousClose}
               volume={(data.basic as any)?.volume || realtimeData.volume}
-              turnover={realtimeData.turnover}
+              turnover={(data.basic as any)?.turnover || realtimeData.turnover}
               marketCap={(data.basic as any)?.market_cap || (data.stockBasic as any)?.marketCap || '--'}
               circulatingCap={(data.basic as any)?.circulating_market_cap || (data.basic as any)?.market_cap || (data.stockBasic as any)?.circulatingCap || (data.stockBasic as any)?.marketCap || '--'}
               pe={(data.basic as any)?.pe_ratio || (data.financial as any)?.pe_ratio || (data.stockBasic as any)?.pe || (data.stockBasic as any)?.peRatio || (data.stockBasic as any)?.forwardPE || (data.stockBasic as any)?.trailingPE || 0}

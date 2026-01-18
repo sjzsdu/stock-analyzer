@@ -34,6 +34,7 @@ class CustomJSONEncoder(JSONEncoder):
 
 
 import time
+import os
 from collections import defaultdict
 from typing import Dict, Tuple
 
@@ -69,6 +70,7 @@ from data.progress import (
 )
 from agents.crew_agents import run_crew_analysis
 from utils.config import config
+from data.mongo_save import save_analysis_to_mongodb_sync
 
 # 加载环境变量
 project_root = Path(__file__).parent.parent
@@ -343,95 +345,57 @@ async def analyze_stock(
 
 
 class AnalysisJob:
-    """分析任务状态"""
+    """分析任务状态 (基于 Redis 或内存存储)"""
 
-    jobs: dict = {}
-    MAX_JOBS = 500
-    JOB_TTL = 3600
+    _task_store = None
 
     @classmethod
-    def cleanup_expired(cls):
-        """清理过期任务"""
-        cutoff = datetime.now() - timedelta(seconds=cls.JOB_TTL)
-        expired_keys = [
-            k
-            for k, v in cls.jobs.items()
-            if datetime.fromisoformat(v["created_at"]) < cutoff
-        ]
-        for k in expired_keys:
-            del cls.jobs[k]
-        return len(expired_keys)
+    def get_store(cls):
+        """获取任务存储实例"""
+        if cls._task_store is None:
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+            from data.redis_task_store import get_task_store
 
-    @classmethod
-    def enforce_limits(cls):
-        """强制执行任务数量限制"""
-        if len(cls.jobs) <= cls.MAX_JOBS:
-            return
-        sorted_jobs = sorted(
-            cls.jobs.items(), key=lambda x: datetime.fromisoformat(x[1]["created_at"])
-        )
-        excess_count = len(cls.jobs) - cls.MAX_JOBS
-        for k, _ in sorted_jobs[:excess_count]:
-            del cls.jobs[k]
+            cls._task_store = get_task_store(redis_url)
+        return cls._task_store
 
     @classmethod
     def create(cls, symbol: str, market: str) -> str:
-        """创建新任务，自动清理过期任务并强制限制"""
-        cls.cleanup_expired()
-        cls.enforce_limits()
+        """创建新任务"""
+        from data.redis_task_store import TaskData
+
+        store = cls.get_store()
         job_id = str(uuid.uuid4())
-        cls.jobs[job_id] = {
-            "symbol": symbol,
-            "market": market,
-            "status": "pending",
-            "progress": 0,
-            "stage": "starting",
-            "message": "开始分析...",
-            "result": None,
-            "error": None,
-            "created_at": datetime.now().isoformat(),
-        }
+        task = TaskData(symbol=symbol, market=market)
+        store.create(job_id, task)
         return job_id
 
     @classmethod
     def update(cls, job_id: str, stage: str, progress: int, message: str):
-        if job_id in cls.jobs:
-            cls.jobs[job_id].update(
-                {
-                    "stage": stage,
-                    "progress": progress,
-                    "message": message,
-                }
-            )
+        """更新任务进度"""
+        store = cls.get_store()
+        store.update(job_id, stage=stage, progress=progress, message=message)
 
     @classmethod
     def complete(cls, job_id: str, result: dict):
-        if job_id in cls.jobs:
-            cls.jobs[job_id].update(
-                {
-                    "status": "completed",
-                    "progress": 100,
-                    "stage": "complete",
-                    "message": "分析完成!",
-                    "result": result,
-                }
-            )
+        """完成任务"""
+        store = cls.get_store()
+        store.complete(job_id, result)
 
     @classmethod
     def fail(cls, job_id: str, error: str):
-        if job_id in cls.jobs:
-            cls.jobs[job_id].update(
-                {
-                    "status": "failed",
-                    "stage": "error",
-                    "message": f"错误: {error}",
-                    "error": error,
-                }
-            )
+        """标记任务失败"""
+        store = cls.get_store()
+        store.fail(job_id, error)
 
     @classmethod
     def get(cls, job_id: str) -> Optional[dict]:
-        return cls.jobs.get(job_id)
+        """获取任务"""
+        store = cls.get_store()
+        task = store.get(job_id)
+        if task:
+            return task.to_dict()
+        return None
 
 
 @app.get("/api/analyze/progress/{job_id}")
@@ -473,7 +437,14 @@ async def stream_analysis_progress(job_id: str, request: Request):
 
             # 检查是否完成或失败
             if job["status"] == "completed":
-                yield f"data: {json.dumps({'stage': 'complete', 'progress': 100, 'message': '分析完成!', 'result': job.get('result')}, cls=CustomJSONEncoder)}\n\n"
+                job_result = job.get("result")
+                print(
+                    f"[SSE] Job completed, result keys: {list(job_result.keys()) if job_result else 'None'}"
+                )
+                print(
+                    f"[SSE] agentResults: {job_result.get('agentResults') if job_result else 'N/A'}"
+                )
+                yield f"data: {json.dumps({'stage': 'complete', 'progress': 100, 'message': '分析完成!', 'result': job_result}, cls=CustomJSONEncoder)}\n\n"
                 break
             elif job["status"] == "failed":
                 yield f"data: {json.dumps({'stage': 'error', 'progress': -1, 'message': job.get('message', '分析失败'), 'error': job.get('error')}, cls=CustomJSONEncoder)}\n\n"
@@ -490,10 +461,6 @@ async def stream_analysis_progress(job_id: str, request: Request):
 
             await asyncio.sleep(1)
             retry_count += 1
-
-        # 清理任务
-        if job_id in AnalysisJob.jobs:
-            del AnalysisJob.jobs[job_id]
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -539,7 +506,8 @@ async def analyze_stock_async(request: StockRequest, request_obj: Request):
                 stock_result = await collect_a_share_data(symbol)
                 stock_data = stock_result_to_dict(stock_result)
             else:
-                stock_data = cached_result
+                stock_data = cached_result if cached_result else {}
+
             if not stock_data.get("success"):
                 raise ValueError(stock_data.get("error", "数据采集失败"))
 
@@ -552,16 +520,37 @@ async def analyze_stock_async(request: StockRequest, request_obj: Request):
             AnalysisJob.update(job_id, "collect_news", 50, "采集新闻资讯...")
 
             # 阶段3: AI分析
-            AnalysisJob.update(job_id, "ai_analysis", 55, "AI分析中...")
+            AnalysisJob.update(
+                job_id, "ai_analysis", 55, "AI分析中（这可能需要 1-3 分钟）..."
+            )
+
+            print(f"[CrewAI] 开始分析: {symbol}")
             analysis_result = run_crew_analysis(symbol, stock_data)
+            print(
+                f"[CrewAI] 分析完成，结果: {json.dumps(analysis_result, indent=2, ensure_ascii=False)[:500]}..."
+            )
 
-            AnalysisJob.update(job_id, "ai_value", 65, "价值分析完成")
+            # 解析分析结果并显示
+            agent_count = len(analysis_result.get("agentResults", [])) or len(
+                analysis_result.get("roleAnalysis", [])
+            )
+            if agent_count > 0:
+                AnalysisJob.update(
+                    job_id,
+                    "ai_value",
+                    65,
+                    f"价值分析 Agent 分析完成（{agent_count}个Agent参与）",
+                )
+            else:
+                AnalysisJob.update(job_id, "ai_value", 65, "分析结果生成中...")
 
-            AnalysisJob.update(job_id, "ai_technical", 75, "技术分析完成")
+            AnalysisJob.update(job_id, "ai_technical", 75, "综合分析结果生成中...")
 
-            AnalysisJob.update(job_id, "ai_growth", 85, "成长分析完成")
+            AnalysisJob.update(job_id, "ai_growth", 85, "正在整合多Agent分析结果...")
 
-            AnalysisJob.update(job_id, "ai_risk", 90, "风险评估完成")
+            AnalysisJob.update(
+                job_id, "ai_risk", 90, "风险评估完成，准备生成最终报告..."
+            )
 
             # 合并结果
             final_result = {
@@ -569,9 +558,20 @@ async def analyze_stock_async(request: StockRequest, request_obj: Request):
                 **analysis_result,
                 "timestamp": datetime.now().isoformat(),
             }
+            print(f"[Analysis] final_result keys: {list(final_result.keys())}")
+            print(f"[Analysis] agentResults: {final_result.get('agentResults')}")
+            print(f"[Analysis] overallScore: {final_result.get('overallScore')}")
 
             AnalysisJob.update(job_id, "complete", 100, "分析完成!")
             AnalysisJob.complete(job_id, final_result)
+
+            save_analysis_to_mongodb_sync(
+                symbol=symbol,
+                market=market,
+                stock_data=stock_data,
+                analysis_result=analysis_result,
+                job_id=job_id,
+            )
 
         except Exception as e:
             error_msg = str(e)
@@ -582,13 +582,14 @@ async def analyze_stock_async(request: StockRequest, request_obj: Request):
             AnalysisJob.fail(job_id, error_msg)
 
     task = asyncio.create_task(run_analysis())
-    task.add_done_callback(
-        lambda t: print(
-            f"[{datetime.now()}] 任务 {job_id} 完成, 状态: {'成功' if not t.exception() else '失败'}"
-        )
-        if not t.cancelled()
-        else None
-    )
+
+    def on_done(t: asyncio.Task) -> None:
+        if not t.cancelled():
+            exc = t.exception()
+            status = "成功" if exc is None else "失败"
+            print(f"[{datetime.now()}] 任务 {job_id} 完成, 状态: {status}")
+
+    task.add_done_callback(on_done)
 
     return {
         "success": True,

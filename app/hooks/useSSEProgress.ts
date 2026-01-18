@@ -8,6 +8,7 @@ export interface ProgressState {
   elapsed_seconds?: number;
   result?: Record<string, unknown>;
   error?: string;
+  isWaitingForServer?: boolean;
 }
 
 interface UseSSEProgressOptions {
@@ -17,6 +18,8 @@ interface UseSSEProgressOptions {
   enabled?: boolean;
   heartbeatInterval?: number;
   maxHeartbeatWait?: number;
+  maxReconnectAttempts?: number;
+  initialReconnectDelay?: number;
 }
 
 interface UseSSEProgressReturn {
@@ -29,8 +32,10 @@ interface UseSSEProgressReturn {
   error: string | null;
 }
 
-const DEFAULT_HEARTBEAT_INTERVAL = 30000;
-const DEFAULT_MAX_HEARTBEAT_WAIT = 60000;
+const DEFAULT_HEARTBEAT_INTERVAL = 15000;
+const DEFAULT_MAX_HEARTBEAT_WAIT = 30000;
+const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;
+const DEFAULT_INITIAL_RECONNECT_DELAY = 1000;
 
 export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgressReturn {
   const {
@@ -40,6 +45,8 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
     enabled = true,
     heartbeatInterval = DEFAULT_HEARTBEAT_INTERVAL,
     maxHeartbeatWait = DEFAULT_MAX_HEARTBEAT_WAIT,
+    maxReconnectAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS,
+    initialReconnectDelay = DEFAULT_INITIAL_RECONNECT_DELAY,
   } = options;
 
   const [progress, setProgress] = useState<ProgressState | null>(null);
@@ -53,12 +60,18 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastProgressTimeRef = useRef<number>(Date.now());
   const reconnectAttemptsRef = useRef<number>(0);
-  const MAX_RECONNECT_ATTEMPTS = 3;
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isManualStopRef = useRef<boolean>(false);
 
   const stop = useCallback(() => {
+    isManualStopRef.current = true;
     if (heartbeatTimerRef.current) {
       clearInterval(heartbeatTimerRef.current);
       heartbeatTimerRef.current = null;
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
@@ -76,6 +89,7 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
     if (!enabled) return;
 
     stop();
+    isManualStopRef.current = false;
     setHasError(false);
     setError(null);
     setProgress(null);
@@ -104,22 +118,32 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
       setJobId(newJobId);
       setIsRunning(true);
 
+      let reconnectCount = 0;
+
       const connectSSE = () => {
+        if (isManualStopRef.current) return;
+
         const eventSource = new EventSource(`${PYTHON_API_URL}/api/analyze/stream/${newJobId}`);
         eventSourceRef.current = eventSource;
 
         eventSource.onopen = () => {
           console.log('[SSE] 连接已建立');
+          reconnectCount = 0;
           reconnectAttemptsRef.current = 0;
+          setProgress(prev => prev ? { ...prev, isWaitingForServer: false } : null);
         };
 
         eventSource.onmessage = (event) => {
+          if (isManualStopRef.current) return;
+
           try {
             lastProgressTimeRef.current = Date.now();
+            setProgress(prev => prev ? { ...prev, isWaitingForServer: false } : null);
 
-            // 处理可能包含 NaN 的数据
             const sanitizedData = event.data.replace(/: NaN([,}])/g, ': null$1');
             const data = JSON.parse(sanitizedData);
+
+            console.log('[SSE] Received data:', JSON.stringify(data, null, 2));
 
             if (data.error) {
               setHasError(true);
@@ -130,13 +154,14 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
             }
 
             if (data.stage === 'complete' && data.result) {
-              // 处理 result 中的 NaN 值
+              console.log('[SSE] Analysis complete, result:', JSON.stringify(data.result, null, 2));
               const sanitizedResult = JSON.parse(JSON.stringify(data.result).replace(/: NaN([,}])/g, ': null$1'));
               setProgress({
                 stage: 'complete',
                 progress: 100,
                 message: '分析完成!',
                 result: sanitizedResult,
+                isWaitingForServer: false,
               });
               onComplete?.(sanitizedResult);
               stop();
@@ -157,6 +182,7 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
               message: data.message || '',
               details: data.details,
               elapsed_seconds: data.elapsed_seconds,
+              isWaitingForServer: false,
             };
 
             setProgress(newProgress);
@@ -169,42 +195,59 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
 
         eventSource.onerror = (error) => {
           console.error('[SSE] 连接错误:', error);
-          console.error('[SSE] 错误详情:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+
+          if (isManualStopRef.current) return;
 
           if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
-            const now = Date.now();
-            const timeSinceLastProgress = now - lastProgressTimeRef.current;
+            reconnectCount += 1;
 
-            if (timeSinceLastProgress > maxHeartbeatWait && reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+            if (reconnectCount > maxReconnectAttempts) {
               setHasError(true);
-              setError('连接超时，请稍后重试');
-              onError?.('连接超时，请稍后重试');
+              setError('连接多次失败，请稍后重试');
+              onError?.('连接多次失败，请稍后重试');
               stop();
               return;
             }
 
-            if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-              reconnectAttemptsRef.current += 1;
-              console.log(`[SSE] 尝试重新连接 (${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`);
-              setTimeout(connectSSE, 2000 * reconnectAttemptsRef.current);
-              return;
-            }
+            const delay = Math.min(initialReconnectDelay * Math.pow(2, reconnectCount - 1), 10000);
+            console.log(`[SSE] 将在 ${delay}ms 后尝试重新连接 (${reconnectCount}/${maxReconnectAttempts})`);
 
-            setHasError(true);
-            setError('连接已断开');
-            onError?.('连接已断开');
+            reconnectTimeoutRef.current = setTimeout(() => {
+              if (!isManualStopRef.current) {
+                connectSSE();
+              }
+            }, delay);
           }
-          stop();
         };
       };
 
       connectSSE();
 
       heartbeatTimerRef.current = setInterval(() => {
+        if (isManualStopRef.current || !eventSourceRef.current) return;
+
         const now = Date.now();
         const timeSinceLastProgress = now - lastProgressTimeRef.current;
 
-        if (timeSinceLastProgress > heartbeatInterval && eventSourceRef.current?.readyState === EventSource.OPEN) {
+        if (timeSinceLastProgress > maxHeartbeatWait) {
+          console.log('[SSE] 心跳超时，显示等待状态');
+
+          setProgress(prev => {
+            const currentProgress = prev?.progress || 0;
+            return {
+              stage: prev?.stage || 'waiting',
+              progress: currentProgress,
+              message: prev?.message || '等待服务器响应...',
+              details: prev?.details,
+              elapsed_seconds: prev?.elapsed_seconds,
+              isWaitingForServer: true,
+            };
+          });
+
+          if (eventSourceRef.current?.readyState === EventSource.OPEN) {
+            console.log('[SSE] 连接打开但无响应，可能服务器繁忙');
+          }
+        } else if (timeSinceLastProgress > heartbeatInterval && eventSourceRef.current?.readyState === EventSource.OPEN) {
           console.log('[SSE] 发送心跳检测...');
           lastProgressTimeRef.current = now;
         }
@@ -216,7 +259,7 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
       setError(errorMessage);
       onError?.(errorMessage);
     }
-  }, [enabled, stop, onComplete, onError, onProgress, heartbeatInterval, maxHeartbeatWait]);
+  }, [enabled, stop, onComplete, onError, onProgress, heartbeatInterval, maxHeartbeatWait, maxReconnectAttempts, initialReconnectDelay]);
 
   useEffect(() => {
     return () => {
