@@ -74,10 +74,14 @@ class Config:
     LLM_MAX_TOKENS: int = 2000
 
     # CORS 配置
-    CORS_ALLOW_ORIGINS: List[str] = ["*"]
+    CORS_ALLOW_ORIGINS: List[str] = []
     CORS_ALLOW_CREDENTIALS: bool = True
-    CORS_ALLOW_METHODS: List[str] = ["*"]
-    CORS_ALLOW_HEADERS: List[str] = ["*"]
+    CORS_ALLOW_METHODS: List[str] = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    CORS_ALLOW_HEADERS: List[str] = [
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+    ]
 
     # 数据采集配置
     COLLECT_MAX_RETRIES: int = 3

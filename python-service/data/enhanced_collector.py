@@ -185,28 +185,36 @@ def process_spot_data(df: pd.DataFrame, symbol: str) -> Optional[StockBasicInfo]
     if df is None or len(df) == 0:
         return None
 
-    basic = StockBasicInfo()
+    df = df.copy()
+    df["代码"] = df["代码"].astype(str)
 
-    for _, row in df.iterrows():
-        code = str(row.get("代码", ""))
-        if symbol in code or code in symbol:
-            basic.symbol = code
-            basic.name = str(row.get("名称", ""))
-            basic.current_price = safe_float(row.get("最新价"))
-            basic.open = safe_float(row.get("今开"))
-            basic.high = safe_float(row.get("最高"))
-            basic.low = safe_float(row.get("最低"))
-            basic.pre_close = safe_float(row.get("昨收"))
-            basic.change_amount = safe_float(row.get("涨跌额"))
-            basic.change_pct = safe_float(row.get("涨跌幅"))
-            basic.volume = int(safe_float(row.get("成交量", 0)) or 0)
-            basic.avg_volume = int(safe_float(row.get("成交额", 0)) or 0)
-            basic.market_cap = parse_chinese_number(row.get("总市值", "0"))
-            basic.pe_ratio = safe_float(row.get("市盈率-动态"))
-            basic.pb_ratio = safe_float(row.get("市净率"))
-            basic.dividend_yield = safe_float(row.get("股息率"))
-            basic.turnover_rate = safe_float(row.get("换手率"))
-            break
+    mask = df["代码"].str.contains(symbol, na=False) | df["代码"].str.match(
+        symbol, na=False
+    )
+    matched = df[mask]
+
+    if len(matched) == 0:
+        return None
+
+    row = matched.iloc[0]
+
+    basic = StockBasicInfo()
+    basic.symbol = str(row.get("代码", "")) or ""
+    basic.name = str(row.get("名称", "")) or ""
+    basic.current_price = safe_float(row.get("最新价")) or 0
+    basic.open = safe_float(row.get("今开")) or 0
+    basic.high = safe_float(row.get("最高")) or 0
+    basic.low = safe_float(row.get("最低")) or 0
+    basic.pre_close = safe_float(row.get("昨收")) or 0
+    basic.change_amount = safe_float(row.get("涨跌额")) or 0
+    basic.change_pct = safe_float(row.get("涨跌幅")) or 0
+    basic.volume = int(safe_float(row.get("成交量", 0)) or 0)
+    basic.avg_volume = int(safe_float(row.get("成交额", 0)) or 0)
+    basic.market_cap = parse_chinese_number(str(row.get("总市值", "0"))) or 0
+    basic.pe_ratio = safe_float(row.get("市盈率-动态"))
+    basic.pb_ratio = safe_float(row.get("市净率"))
+    basic.dividend_yield = safe_float(row.get("股息率"))
+    basic.turnover_rate = safe_float(row.get("换手率"))
 
     return basic
 
@@ -246,7 +254,7 @@ def process_financial_em(df: pd.DataFrame) -> FinancialMetrics:
         # 确保 df 是 DataFrame 且非空
         if not isinstance(df, pd.DataFrame) or df.empty:
             return metrics
-            
+
         latest = df.iloc[0] if len(df) > 0 else {}
 
         # 尝试不同的列名
@@ -261,67 +269,67 @@ def process_financial_em(df: pd.DataFrame) -> FinancialMetrics:
         payout_ratio_cols = ["分红比例", "股息支付率"]
         revenue_growth_cols = ["营业收入增长率", "营收增长"]
         net_profit_growth_cols = ["净利润增长率", "利润增长"]
-        
+
         # 尝试获取 ROE
         for col in roe_cols:
             if col in df.columns:
                 metrics.roe = safe_float(latest.get(col))
                 break
-                
+
         # 尝试获取 ROA
         for col in roa_cols:
             if col in df.columns:
                 metrics.roa = safe_float(latest.get(col))
                 break
-                
+
         # 尝试获取净利率
         for col in net_profit_margin_cols:
             if col in df.columns:
                 metrics.net_profit_margin = safe_float(latest.get(col))
                 break
-                
+
         # 尝试获取毛利率
         for col in gross_profit_margin_cols:
             if col in df.columns:
                 metrics.gross_profit_margin = safe_float(latest.get(col))
                 break
-                
+
         # 尝试获取营业利润率
         for col in operating_margin_cols:
             if col in df.columns:
                 metrics.operating_margin = safe_float(latest.get(col))
                 break
-                
+
         # 尝试获取资产负债率
         for col in debt_to_equity_cols:
             if col in df.columns:
                 metrics.debt_to_equity = safe_float(latest.get(col))
                 break
-                
+
         # 尝试获取流动比率
         for col in current_ratio_cols:
             if col in df.columns:
                 metrics.current_ratio = safe_float(latest.get(col))
                 break
-                
+
         # 尝试获取速动比率
         for col in quick_ratio_cols:
             if col in df.columns:
                 metrics.quick_ratio = safe_float(latest.get(col))
                 break
-                
+
         # 尝试获取分红比例
         for col in payout_ratio_cols:
             if col in df.columns:
                 metrics.payout_ratio = safe_float(latest.get(col))
                 break
-                
+
         # 尝试获取营收增长率
         for col in revenue_growth_cols:
             if col in df.columns:
                 metrics.revenue_growth = safe_float(latest.get(col))
                 break
-                
+
         # 尝试获取净利润增长率
         for col in net_profit_growth_cols:
             if col in df.columns:
@@ -374,7 +382,7 @@ def process_concept_tags(symbol: str) -> List[str]:
     # 如果没有获取到概念标签，返回默认标签
     if not tags:
         tags = ["A股", "主板", "上海市场"]
-    
+
     return tags
 
 
@@ -626,7 +634,7 @@ async def collect_a_share_data(symbol: str) -> StockAnalysisResult:
             try:
                 print("[AkShare] 开始获取实时行情...")
                 spot_basic = None
-                
+
                 # 直接跳过可能卡住的实时行情接口，使用K线数据作为替代
                 basic = StockBasicInfo()
                 basic.symbol = symbol
@@ -642,7 +650,7 @@ async def collect_a_share_data(symbol: str) -> StockAnalysisResult:
                 basic.dividend_yield = 0.0  # 股息率
                 result.basic = basic
                 print("[AkShare] 跳过实时行情接口，使用默认值")
-                
+
             except Exception as e:
                 print(f"[AkShare] 实时行情获取失败: {e}")
                 # 创建默认的基本信息
@@ -669,7 +677,9 @@ async def collect_a_share_data(symbol: str) -> StockAnalysisResult:
                 if result.basic:
                     result.basic.name = symbol  # 使用代码作为名称
                     result.basic.industry = "未知行业"  # 设置默认行业
-                    print(f"[AkShare] 跳过个股详细信息接口，使用默认值: 名称={result.basic.name}")
+                    print(
+                        f"[AkShare] 跳过个股详细信息接口，使用默认值: 名称={result.basic.name}"
+                    )
             except Exception as e:
                 print(f"[AkShare] 个股信息获取失败: {e}")
                 # 如果获取失败，确保 basic 有默认值
@@ -701,17 +711,21 @@ async def collect_a_share_data(symbol: str) -> StockAnalysisResult:
                 )
                 result.kline = process_akshare_kline(hist_data)
                 print(f"[AkShare] K线数据: {len(result.kline)} 条")
-                
+
                 # 使用K线数据的最后一天更新实时行情
                 if result.kline and len(result.kline) > 0:
                     last_kline = result.kline[-1]
                     if result.basic:
                         result.basic.current_price = last_kline.close
-                        result.basic.pre_close = last_kline.close  # 使用当前价格作为昨收
+                        result.basic.pre_close = (
+                            last_kline.close
+                        )  # 使用当前价格作为昨收
                         result.basic.open = last_kline.open
                         result.basic.high = last_kline.high
                         result.basic.low = last_kline.low
-                        print(f"[AkShare] 使用K线数据更新实时行情: 价格={last_kline.close}")
+                        print(
+                            f"[AkShare] 使用K线数据更新实时行情: 价格={last_kline.close}"
+                        )
             except Exception as e:
                 print(f"[AkShare] K线数据获取失败: {e}")
                 # 如果K线数据获取失败，创建空的K线列表

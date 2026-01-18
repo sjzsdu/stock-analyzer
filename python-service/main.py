@@ -12,9 +12,12 @@ import uvicorn
 import asyncio
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from pathlib import Path
+import time
+from collections import defaultdict
+from typing import Dict, Tuple
 
 from data.enhanced_collector import (
     collect_a_share_data,
@@ -80,6 +83,64 @@ app.add_middleware(
     allow_methods=cfg.CORS_ALLOW_METHODS,
     allow_headers=cfg.CORS_ALLOW_HEADERS,
 )
+
+
+# ==================== 速率限制器 ====================
+
+
+class RateLimiter:
+    """简单的内存速率限制器"""
+
+    def __init__(self, max_requests: int = 10, window_seconds: int = 60):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.requests: Dict[str, list] = defaultdict(list)
+
+    def _cleanup_old_requests(self, client_id: str):
+        """清理过期的请求记录"""
+        now = time.time()
+        cutoff = now - self.window_seconds
+        self.requests[client_id] = [
+            req_time for req_time in self.requests[client_id] if req_time > cutoff
+        ]
+
+    def is_allowed(self, client_id: str) -> Tuple[bool, int]:
+        """
+        检查是否允许请求
+
+        Returns:
+            (is_allowed, remaining_requests)
+        """
+        self._cleanup_old_requests(client_id)
+        current_count = len(self.requests[client_id])
+
+        if current_count >= self.max_requests:
+            return False, 0
+
+        self.requests[client_id].append(time.time())
+        remaining = self.max_requests - current_count - 1
+        return True, max(0, remaining)
+
+    def get_retry_after(self, client_id: str) -> int:
+        """获取需要等待的秒数"""
+        self._cleanup_old_requests(client_id)
+        if len(self.requests[client_id]) < self.max_requests:
+            return 0
+
+        oldest = min(self.requests[client_id])
+        retry_after = int(self.window_seconds - (time.time() - oldest)) + 1
+        return max(1, retry_after)
+
+
+rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
+
+
+def check_rate_limit(client_id: str) -> Optional[int]:
+    """检查速率限制，返回需要等待的秒数（如果被限制）"""
+    is_allowed, remaining = rate_limiter.is_allowed(client_id)
+    if not is_allowed:
+        return rate_limiter.get_retry_after(client_id)
+    return None
 
 
 # ==================== 请求/响应模型 ====================
@@ -177,7 +238,7 @@ async def health_check():
 
 
 @app.post("/api/collect", response_model=StockDataResponse)
-async def collect_stock_data(request: StockRequest):
+async def collect_stock_data(request: StockRequest, request_obj: Request):
     """
     采集股票数据的主入口
 
@@ -186,6 +247,14 @@ async def collect_stock_data(request: StockRequest):
     - 港股：yFinance
     - 美股：yFinance
     """
+    client_id = request_obj.client.host if request_obj.client else "unknown"
+
+    retry_after = check_rate_limit(client_id)
+    if retry_after:
+        raise HTTPException(
+            status_code=429, detail=f"请求过于频繁，请等待 {retry_after} 秒后重试"
+        )
+
     try:
         print(
             f"[{datetime.now()}] Collecting data: {request.symbol}, Market: {request.market}"
@@ -211,7 +280,9 @@ async def collect_stock_data(request: StockRequest):
 
 
 @app.post("/api/analyze", response_model=AnalysisResponse)
-async def analyze_stock(request: AnalysisRequest, background_tasks: BackgroundTasks):
+async def analyze_stock(
+    request: AnalysisRequest, background_tasks: BackgroundTasks, request_obj: Request
+):
     """
     使用CrewAI进行多Agent分析
 
@@ -219,6 +290,14 @@ async def analyze_stock(request: AnalysisRequest, background_tasks: BackgroundTa
     - This endpoint uses real DeepSeek AI analysis
     - Returns error if DEEPSEEK_API_KEY is not configured
     """
+    client_id = request_obj.client.host if request_obj.client else "unknown"
+
+    retry_after = check_rate_limit(client_id)
+    if retry_after:
+        raise HTTPException(
+            status_code=429, detail=f"请求过于频繁，请等待 {retry_after} 秒后重试"
+        )
+
     try:
         start_time = asyncio.get_event_loop().time()
         print(f"[{datetime.now()}] Starting CrewAI analysis: {request.symbol}")
@@ -249,9 +328,39 @@ class AnalysisJob:
     """分析任务状态"""
 
     jobs: dict = {}
+    MAX_JOBS = 500
+    JOB_TTL = 3600
+
+    @classmethod
+    def cleanup_expired(cls):
+        """清理过期任务"""
+        cutoff = datetime.now() - timedelta(seconds=cls.JOB_TTL)
+        expired_keys = [
+            k
+            for k, v in cls.jobs.items()
+            if datetime.fromisoformat(v["created_at"]) < cutoff
+        ]
+        for k in expired_keys:
+            del cls.jobs[k]
+        return len(expired_keys)
+
+    @classmethod
+    def enforce_limits(cls):
+        """强制执行任务数量限制"""
+        if len(cls.jobs) <= cls.MAX_JOBS:
+            return
+        sorted_jobs = sorted(
+            cls.jobs.items(), key=lambda x: datetime.fromisoformat(x[1]["created_at"])
+        )
+        excess_count = len(cls.jobs) - cls.MAX_JOBS
+        for k, _ in sorted_jobs[:excess_count]:
+            del cls.jobs[k]
 
     @classmethod
     def create(cls, symbol: str, market: str) -> str:
+        """创建新任务，自动清理过期任务并强制限制"""
+        cls.cleanup_expired()
+        cls.enforce_limits()
         job_id = str(uuid.uuid4())
         cls.jobs[job_id] = {
             "symbol": symbol,
@@ -368,10 +477,18 @@ async def stream_analysis_progress(job_id: str, request: Request):
 
 
 @app.post("/api/analyze/async")
-async def analyze_stock_async(request: StockRequest):
+async def analyze_stock_async(request: StockRequest, request_obj: Request):
     """
     异步分析接口 - 返回job_id用于SSE进度追踪
     """
+    client_id = request_obj.client.host if request_obj.client else "unknown"
+
+    retry_after = check_rate_limit(client_id)
+    if retry_after:
+        raise HTTPException(
+            status_code=429, detail=f"请求过于频繁，请等待 {retry_after} 秒后重试"
+        )
+
     symbol = request.symbol
     market = request.market
 
@@ -432,9 +549,19 @@ async def analyze_stock_async(request: StockRequest):
         except Exception as e:
             error_msg = str(e)
             print(f"[{datetime.now()}] 分析失败: {error_msg}")
+            import traceback
+
+            traceback.print_exc()
             AnalysisJob.fail(job_id, error_msg)
 
-    asyncio.create_task(run_analysis())
+    task = asyncio.create_task(run_analysis())
+    task.add_done_callback(
+        lambda t: print(
+            f"[{datetime.now()}] 任务 {job_id} 完成, 状态: {'成功' if not t.exception() else '失败'}"
+        )
+        if not t.cancelled()
+        else None
+    )
 
     return {
         "success": True,

@@ -15,6 +15,8 @@ interface UseSSEProgressOptions {
   onError?: (error: string) => void;
   onProgress?: (state: ProgressState) => void;
   enabled?: boolean;
+  heartbeatInterval?: number;
+  maxHeartbeatWait?: number;
 }
 
 interface UseSSEProgressReturn {
@@ -27,8 +29,18 @@ interface UseSSEProgressReturn {
   error: string | null;
 }
 
+const DEFAULT_HEARTBEAT_INTERVAL = 30000;
+const DEFAULT_MAX_HEARTBEAT_WAIT = 60000;
+
 export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgressReturn {
-  const { onComplete, onError, onProgress, enabled = true } = options;
+  const {
+    onComplete,
+    onError,
+    onProgress,
+    enabled = true,
+    heartbeatInterval = DEFAULT_HEARTBEAT_INTERVAL,
+    maxHeartbeatWait = DEFAULT_MAX_HEARTBEAT_WAIT,
+  } = options;
 
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -38,8 +50,16 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastProgressTimeRef = useRef<number>(Date.now());
+  const reconnectAttemptsRef = useRef<number>(0);
+  const MAX_RECONNECT_ATTEMPTS = 3;
 
   const stop = useCallback(() => {
+    if (heartbeatTimerRef.current) {
+      clearInterval(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = null;
+    }
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -49,6 +69,7 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
       abortControllerRef.current = null;
     }
     setIsRunning(false);
+    reconnectAttemptsRef.current = 0;
   }, []);
 
   const start = useCallback(async (symbol: string, market: string) => {
@@ -58,6 +79,7 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
     setHasError(false);
     setError(null);
     setProgress(null);
+    lastProgressTimeRef.current = Date.now();
 
     try {
       const PYTHON_API_URL = process.env.NEXT_PUBLIC_PYTHON_API_URL || 'http://localhost:8000';
@@ -82,69 +104,105 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
       setJobId(newJobId);
       setIsRunning(true);
 
-      const eventSource = new EventSource(`${PYTHON_API_URL}/api/analyze/stream/${newJobId}`);
-      eventSourceRef.current = eventSource;
+      const connectSSE = () => {
+        const eventSource = new EventSource(`${PYTHON_API_URL}/api/analyze/stream/${newJobId}`);
+        eventSourceRef.current = eventSource;
 
-      eventSource.onopen = () => {
-        console.log('[SSE] 连接已建立');
-      };
+        eventSource.onopen = () => {
+          console.log('[SSE] 连接已建立');
+          reconnectAttemptsRef.current = 0;
+        };
 
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
+        eventSource.onmessage = (event) => {
+          try {
+            lastProgressTimeRef.current = Date.now();
 
-          if (data.error) {
+            const data = JSON.parse(event.data);
+
+            if (data.error) {
+              setHasError(true);
+              setError(data.error);
+              onError?.(data.error);
+              stop();
+              return;
+            }
+
+            if (data.stage === 'complete' && data.result) {
+              setProgress({
+                stage: 'complete',
+                progress: 100,
+                message: '分析完成!',
+                result: data.result,
+              });
+              onComplete?.(data.result);
+              stop();
+              return;
+            }
+
+            if (data.stage === 'error') {
+              setHasError(true);
+              setError(data.message || '分析失败');
+              onError?.(data.message || '分析失败');
+              stop();
+              return;
+            }
+
+            const newProgress: ProgressState = {
+              stage: data.stage || 'unknown',
+              progress: data.progress || 0,
+              message: data.message || '',
+              details: data.details,
+              elapsed_seconds: data.elapsed_seconds,
+            };
+
+            setProgress(newProgress);
+            onProgress?.(newProgress);
+          } catch (parseError) {
+            console.error('[SSE] 解析数据失败:', parseError);
+          }
+        };
+
+        eventSource.onerror = (error) => {
+          console.error('[SSE] 连接错误:', error);
+
+          if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
+            const now = Date.now();
+            const timeSinceLastProgress = now - lastProgressTimeRef.current;
+
+            if (timeSinceLastProgress > maxHeartbeatWait && reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+              setHasError(true);
+              setError('连接超时，请稍后重试');
+              onError?.('连接超时，请稍后重试');
+              stop();
+              return;
+            }
+
+            if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+              reconnectAttemptsRef.current += 1;
+              console.log(`[SSE] 尝试重新连接 (${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`);
+              setTimeout(connectSSE, 2000 * reconnectAttemptsRef.current);
+              return;
+            }
+
             setHasError(true);
-            setError(data.error);
-            onError?.(data.error);
-            stop();
-            return;
+            setError('连接已断开');
+            onError?.('连接已断开');
           }
-
-          if (data.stage === 'complete' && data.result) {
-            setProgress({
-              stage: 'complete',
-              progress: 100,
-              message: '分析完成!',
-              result: data.result,
-            });
-            onComplete?.(data.result);
-            stop();
-            return;
-          }
-
-          if (data.stage === 'error') {
-            setHasError(true);
-            setError(data.message || '分析失败');
-            onError?.(data.message || '分析失败');
-            stop();
-            return;
-          }
-
-          const newProgress: ProgressState = {
-            stage: data.stage || 'unknown',
-            progress: data.progress || 0,
-            message: data.message || '',
-            details: data.details,
-            elapsed_seconds: data.elapsed_seconds,
-          };
-
-          setProgress(newProgress);
-          onProgress?.(newProgress);
-        } catch (parseError) {
-          console.error('[SSE] 解析数据失败:', parseError);
-        }
+          stop();
+        };
       };
 
-      eventSource.onerror = (error) => {
-        console.error('[SSE] 连接错误:', error);
-        if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
-          setHasError(true);
-          setError('连接已断开');
-          onError?.('连接已断开');
+      connectSSE();
+
+      heartbeatTimerRef.current = setInterval(() => {
+        const now = Date.now();
+        const timeSinceLastProgress = now - lastProgressTimeRef.current;
+
+        if (timeSinceLastProgress > heartbeatInterval && eventSourceRef.current?.readyState === EventSource.OPEN) {
+          console.log('[SSE] 发送心跳检测...');
+          lastProgressTimeRef.current = now;
         }
-        stop();
-      };
+      }, heartbeatInterval);
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '启动分析失败';
@@ -152,7 +210,7 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
       setError(errorMessage);
       onError?.(errorMessage);
     }
-  }, [enabled, stop, onComplete, onError, onProgress]);
+  }, [enabled, stop, onComplete, onError, onProgress, heartbeatInterval, maxHeartbeatWait]);
 
   useEffect(() => {
     return () => {
