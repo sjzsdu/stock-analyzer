@@ -32,6 +32,9 @@ export default function AnalysisSummary({ content }: AnalysisSummaryProps) {
                     prose-ul:list-none prose-ul:space-y-3 prose-ul:my-4
                     prose-ol:list-decimal prose-ol:space-y-2 prose-ol:my-4 prose-ol:pl-4
                     prose-li:relative prose-li:pl-8
+                    prose-li:flex prose-li:items-center prose-li:gap-3
+                    prose-li:bg-white/5 prose-li:backdrop-blur-sm prose-li:p-4 prose-li:rounded-xl prose-li:border prose-li:border-white/10
+                    prose-li:before:content-['✓'] prose-li:before:text-green-400 prose-li:before:flex-shrink-0
                     prose-blockquote:border-l-4 prose-blockquote:border-purple-500/50
                     prose-blockquote:bg-white/5 prose-blockquote:rounded-r-lg prose-blockquote:p-4 prose-blockquote:my-4
                     prose-code:bg-white/10 prose-code:text-purple-300 prose-code:rounded prose-code:px-2 prose-code:py-1
@@ -58,30 +61,6 @@ export default function AnalysisSummary({ content }: AnalysisSummaryProps) {
                 )}
                 {children}
               </h2>
-            ),
-            
-            // 自定义列表样式
-            ul: ({ children }) => (
-              <ul className="space-y-3 my-4">
-                {React.Children.map(children, (child) => (
-                  <li className="flex items-start gap-3 bg-white/5 backdrop-blur-sm p-4 rounded-xl border border-white/10">
-                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
-                    <span className="text-white/90 leading-relaxed">{child}</span>
-                  </li>
-                ))}
-              </ul>
-            ),
-            
-            // 自定义有序列表
-            ol: ({ children }) => (
-              <ol className="space-y-2 my-4 list-decimal list-inside">
-                {React.Children.map(children, (child, idx) => (
-                  <li className="flex items-start gap-3 bg-white/5 backdrop-blur-sm p-3 rounded-lg border border-white/10">
-                    <span className="text-purple-400 font-bold min-w-[1.5rem]">{idx + 1}.</span>
-                    <span className="text-white/90">{child}</span>
-                  </li>
-                ))}
-              </ol>
             ),
             
             // 自定义段落

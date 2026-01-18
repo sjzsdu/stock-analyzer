@@ -326,7 +326,7 @@ def format_kline_summary(kline: list) -> str:
 
     return "\n".join(
         [
-            f"{datetime.fromtimestamp(r[0] / 1000).strftime('%Y-%m-%d')}: C={r[4]:.2f}"
+            f"{datetime.fromtimestamp(r.timestamp / 1000).strftime('%Y-%m-%d')}: C={r.close:.2f}"
             for r in recent
         ]
     )

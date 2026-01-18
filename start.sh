@@ -56,11 +56,13 @@ echo
 # 停止占用端口的进程
 log_info "检查端口占用情况..."
 for port in 8000 3000; do
-    PID=$(lsof -ti :$port 2>/dev/null || true)
-    if [ -n "$PID" ]; then
-        log_warning "端口 $port 已被进程 $PID 占用，正在停止..."
-        kill $PID 2>/dev/null || true
-        sleep 1
+    PIDS=$(lsof -ti :$port 2>/dev/null || true)
+    if [ -n "$PIDS" ]; then
+        log_warning "端口 $port 已被进程 $PIDS 占用，正在停止..."
+        for PID in $PIDS; do
+            kill -9 $PID 2>/dev/null || true
+        done
+        sleep 2
     fi
 done
 

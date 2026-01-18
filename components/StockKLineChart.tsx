@@ -44,6 +44,28 @@ export default function StockKLineChart({ data, symbol }: Props) {
     });
   }, []);
 
+  // 确保 data 是数组，并处理不同格式的 kline 数据
+  const chartData = Array.isArray(data) ? data.map((item: any) => {
+    // 如果是对象格式，转换为数组格式
+    if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+      return [
+        Number(item.timestamp || item[0] || 0),
+        Number(item.open || item[1] || 0),
+        Number(item.high || item[2] || 0),
+        Number(item.low || item[3] || 0),
+        Number(item.close || item[4] || 0),
+        Number(item.volume || item[5] || 0),
+        Number(item.turnover || item[6] || 0)
+      ];
+    }
+    // 如果已经是数组格式，确保所有元素都是数字
+    if (Array.isArray(item)) {
+      return item.map((val: any) => Number(val) || 0);
+    }
+    // 默认为空数组
+    return [];
+  }).filter(item => item.length > 0) : [];
+
   const options = {
     chart: {
       height: 450,
@@ -88,19 +110,19 @@ export default function StockKLineChart({ data, symbol }: Props) {
         height: 32,
         padding: 0,
         style: {
-          color: '#6b7280',
+          color: '#e5e7eb',
           fontWeight: 500,
           fontSize: '0.875rem',
           lineHeight: '1.25rem',
-          backgroundColor: '#f3f4f6',
+          backgroundColor: '#374151',
           border: 'none',
           borderRadius: '0.5rem',
           transition: 'all 0.2s ease'
         },
         states: {
           hover: {
-            backgroundColor: '#e5e7eb',
-            color: '#374151'
+            backgroundColor: '#4b5563',
+            color: '#ffffff'
           },
           select: {
             backgroundColor: '#3b82f6',
@@ -109,15 +131,15 @@ export default function StockKLineChart({ data, symbol }: Props) {
         }
       },
       inputStyle: {
-        backgroundColor: '#f3f4f6',
-        border: '1px solid #d1d5db',
+        backgroundColor: '#374151',
+        border: '1px solid #4b5563',
         borderRadius: '0.375rem',
         padding: '0.5rem',
-        color: '#374151',
+        color: '#e5e7eb',
         fontSize: '0.875rem'
       },
       labelStyle: {
-        color: '#6b7280',
+        color: '#e5e7eb',
         fontWeight: 500,
         fontSize: '0.875rem'
       }
@@ -125,19 +147,19 @@ export default function StockKLineChart({ data, symbol }: Props) {
     navigator: {
       height: 40,
       xAxis: {
-        gridLineColor: '#f3f4f6',
+        gridLineColor: '#374151',
         labels: {
           style: {
-            color: '#6b7280',
+            color: '#e5e7eb',
             fontSize: '0.75rem'
           }
         }
       },
       yAxis: {
-        gridLineColor: '#f3f4f6',
+        gridLineColor: '#374151',
         labels: {
           style: {
-            color: '#6b7280',
+            color: '#e5e7eb',
             fontSize: '0.75rem'
           }
         }
@@ -150,22 +172,22 @@ export default function StockKLineChart({ data, symbol }: Props) {
     },
     scrollbar: {
       height: 12,
-      barBackgroundColor: '#e5e7eb',
+      barBackgroundColor: '#4b5563',
       barBorderRadius: 6,
       barBorderWidth: 0,
-      buttonBackgroundColor: '#e5e7eb',
+      buttonBackgroundColor: '#4b5563',
       buttonBorderWidth: 0,
       buttonBorderRadius: 6,
-      buttonArrowColor: '#6b7280',
+      buttonArrowColor: '#e5e7eb',
       buttonArrowSize: 12,
-      trackBackgroundColor: '#f3f4f6',
+      trackBackgroundColor: '#374151',
       trackBorderWidth: 0,
       trackBorderRadius: 6
     },
     title: {
       text: `${symbol} K线图`,
       style: {
-        color: '#111827',
+        color: '#ffffff',
         fontWeight: 700,
         fontSize: '1.25rem',
         lineHeight: '1.75rem',
@@ -174,16 +196,16 @@ export default function StockKLineChart({ data, symbol }: Props) {
     },
     xAxis: {
       type: 'datetime',
-      gridLineColor: '#f3f4f6',
+      gridLineColor: '#374151',
       labels: {
         style: {
-          color: '#6b7280',
+          color: '#e5e7eb',
           fontSize: '0.875rem'
         }
       },
-      lineColor: '#e5e7eb',
+      lineColor: '#4b5563',
       lineWidth: 1,
-      tickColor: '#e5e7eb'
+      tickColor: '#4b5563'
     },
     yAxis: [{
       labels: {
@@ -230,10 +252,10 @@ export default function StockKLineChart({ data, symbol }: Props) {
       top: '75%',
       height: '25%',
       offset: 0,
-      gridLineColor: '#f3f4f6',
-      lineColor: '#e5e7eb',
+      gridLineColor: '#374151',
+      lineColor: '#4b5563',
       lineWidth: 1,
-      tickColor: '#e5e7eb'
+      tickColor: '#4b5563'
     }],
     tooltip: {
       split: false,
@@ -323,7 +345,7 @@ export default function StockKLineChart({ data, symbol }: Props) {
     series: [{
       type: 'candlestick',
       name: '股价',
-      data: data,
+      data: chartData,
       tooltip: {
         valueDecimals: 2
       },
@@ -337,7 +359,7 @@ export default function StockKLineChart({ data, symbol }: Props) {
     }, {
       type: 'column',
       name: '成交量',
-      data: data.map(d => [d[0], d[5]]),
+      data: chartData.map(d => [d[0], d[5]]),
       yAxis: 1,
       color: '#3b82f6',
       dataGrouping: {
@@ -348,9 +370,9 @@ export default function StockKLineChart({ data, symbol }: Props) {
       buttons: {
         contextButton: {
           symbol: 'menu',
-          symbolStroke: '#6b7280',
+          symbolStroke: '#e5e7eb',
           symbolStrokeWidth: 1.5,
-          symbolFill: '#f3f4f6',
+          symbolFill: '#374151',
           symbolSize: 18,
           align: 'right',
           buttonTheme: {
@@ -360,15 +382,15 @@ export default function StockKLineChart({ data, symbol }: Props) {
             height: 40,
             r: 4,
             style: {
-              color: '#6b7280',
+              color: '#e5e7eb',
               fontSize: '1rem'
             },
             states: {
               hover: {
-                fill: '#e5e7eb'
+                fill: '#4b5563'
               },
               select: {
-                fill: '#d1d5db'
+                fill: '#4b5563'
               }
             }
           }
@@ -382,12 +404,12 @@ export default function StockKLineChart({ data, symbol }: Props) {
       align: 'center',
       verticalAlign: 'bottom',
       itemStyle: {
-        color: '#6b7280',
+        color: '#e5e7eb',
         fontWeight: 500,
         fontSize: '0.875rem'
       },
       itemHoverStyle: {
-        color: '#374151'
+        color: '#ffffff'
       },
       itemDistance: 10,
       padding: 10
