@@ -22,7 +22,7 @@ interface UseSSEProgressOptions {
 interface UseSSEProgressReturn {
   progress: ProgressState | null;
   jobId: string | null;
-  start: (symbol: string, market: string) => Promise<void>;
+  start: (symbol: string, market?: string) => Promise<void>;
   stop: () => void;
   isRunning: boolean;
   hasError: boolean;
@@ -72,7 +72,7 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
     reconnectAttemptsRef.current = 0;
   }, []);
 
-  const start = useCallback(async (symbol: string, market: string) => {
+  const start = useCallback(async (symbol: string, market: string = "A") => {
     if (!enabled) return;
 
     stop();
@@ -117,7 +117,9 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
           try {
             lastProgressTimeRef.current = Date.now();
 
-            const data = JSON.parse(event.data);
+            // 处理可能包含 NaN 的数据
+            const sanitizedData = event.data.replace(/: NaN([,}])/g, ': null$1');
+            const data = JSON.parse(sanitizedData);
 
             if (data.error) {
               setHasError(true);
@@ -128,13 +130,15 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
             }
 
             if (data.stage === 'complete' && data.result) {
+              // 处理 result 中的 NaN 值
+              const sanitizedResult = JSON.parse(JSON.stringify(data.result).replace(/: NaN([,}])/g, ': null$1'));
               setProgress({
                 stage: 'complete',
                 progress: 100,
                 message: '分析完成!',
-                result: data.result,
+                result: sanitizedResult,
               });
-              onComplete?.(data.result);
+              onComplete?.(sanitizedResult);
               stop();
               return;
             }
@@ -159,11 +163,13 @@ export function useSSEProgress(options: UseSSEProgressOptions = {}): UseSSEProgr
             onProgress?.(newProgress);
           } catch (parseError) {
             console.error('[SSE] 解析数据失败:', parseError);
+            console.error('[SSE] 原始数据:', event.data);
           }
         };
 
         eventSource.onerror = (error) => {
           console.error('[SSE] 连接错误:', error);
+          console.error('[SSE] 错误详情:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
 
           if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
             const now = Date.now();

@@ -78,6 +78,17 @@ export default function StockOverviewCard({
     return num.toLocaleString();
   };
 
+  // 格式化市值（支持字符串或数字）
+  const formatMarketCap = (cap: string | number | undefined) => {
+    if (!cap || cap === '--') return '--';
+    const num = typeof cap === 'string' ? parseFloat(cap) : cap;
+    if (!num || num === 0) return '--';
+    if (num >= 100000000000) return (num / 100000000000).toFixed(2) + '万亿';
+    if (num >= 100000000) return (num / 100000000).toFixed(2) + '亿';
+    if (num >= 10000) return (num / 10000).toFixed(2) + '万';
+    return num.toLocaleString();
+  };
+
   return (
     <div className="glass-effect rounded-3xl p-6 card-hover">
       {/* 头部：基本信息 */}
@@ -154,7 +165,7 @@ export default function StockOverviewCard({
             <PieChart className="w-4 h-4" />
             <span className="text-sm">市值</span>
           </div>
-          <div className="text-xl font-bold text-white">{marketCap}</div>
+          <div className="text-xl font-bold text-white">{formatMarketCap(marketCap)}</div>
         </div>
         
         <div className="bg-white/5 rounded-xl p-4 border border-white/10">
@@ -162,7 +173,7 @@ export default function StockOverviewCard({
             <Percent className="w-4 h-4" />
             <span className="text-sm">流通市值</span>
           </div>
-          <div className="text-xl font-bold text-white">{circulatingCap}</div>
+          <div className="text-xl font-bold text-white">{formatMarketCap(circulatingCap)}</div>
         </div>
       </div>
 

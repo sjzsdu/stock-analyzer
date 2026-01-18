@@ -8,10 +8,11 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
+import { useSession } from 'next-auth/react';
 import { 
   Mail, 
   Lock, 
@@ -35,11 +36,19 @@ interface RegisterForm {
 
 export default function SignUpPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
   const { register, handleSubmit, watch, formState: { errors } } = useForm<RegisterForm>();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  
+  // 检查登录状态，如果已登录则跳转到首页
+  useEffect(() => {
+    if (status === 'authenticated') {
+      router.push('/');
+    }
+  }, [status, router]);
   
   const password = watch('password');
   

@@ -13,6 +13,8 @@ export async function GET(
   try {
     const resolvedParams = await params;
     const symbol = resolvedParams.symbol.trim().toUpperCase();
+    const urlParams = new URL(request.url).searchParams;
+    const analysisDate = urlParams.get('date');
     
     if (!symbol) {
       return NextResponse.json(
@@ -21,7 +23,7 @@ export async function GET(
       );
     }
 
-    console.log(`[${new Date().toISOString()}] 获取分析历史: ${symbol}`);
+    console.log(`[${new Date().toISOString()}] 获取分析历史: ${symbol}${analysisDate ? ` (日期: ${analysisDate})` : ''}`);
     
     // 连接数据库
     await connectDB();
@@ -37,11 +39,26 @@ export async function GET(
     // 如果用户已登录，优先从用户历史获取
     if (session?.user?.id) {
       try {
-        const userHistory = await UserAnalysisHistory.findOne({
+        const query: any = {
           userId: new mongoose.Types.ObjectId(session.user.id),
           symbol: symbol,
-        })
-        .sort({ analysisDate: -1 }) // 获取最新的分析
+        };
+        
+        // 如果有日期参数，添加日期过滤
+        if (analysisDate) {
+          const targetDate = new Date(analysisDate);
+          // 查找指定日期的分析（当天的分析）
+          const nextDay = new Date(targetDate);
+          nextDay.setDate(nextDay.getDate() + 1);
+          
+          query.analysisDate = {
+            $gte: targetDate,
+            $lt: nextDay
+          };
+        }
+        
+        const userHistory = await UserAnalysisHistory.findOne(query)
+        .sort(analysisDate ? {} : { analysisDate: -1 }) // 如果有日期参数，不需要排序
         .populate({
           path: 'cache.originalAnalysisId',
           model: StockAnalysis
@@ -66,14 +83,29 @@ export async function GET(
       }
     }
     
-    // 如果没有用户历史，从全局分析表获取最新的分析结果
+    // 如果没有用户历史，从全局分析表获取
     if (!analysisData) {
       try {
-        const globalAnalysis = await StockAnalysis.findOne({
+        const query: any = {
           symbol: symbol,
           market: market,
-        })
-        .sort({ createdAt: -1 }) // 获取最新的分析
+        };
+        
+        // 如果有日期参数，添加日期过滤
+        if (analysisDate) {
+          const targetDate = new Date(analysisDate);
+          // 查找指定日期的分析（当天的分析）
+          const nextDay = new Date(targetDate);
+          nextDay.setDate(nextDay.getDate() + 1);
+          
+          query.createdAt = {
+            $gte: targetDate,
+            $lt: nextDay
+          };
+        }
+        
+        const globalAnalysis = await StockAnalysis.findOne(query)
+        .sort(analysisDate ? {} : { createdAt: -1 }) // 如果有日期参数，不需要排序
         .limit(1);
         
         if (globalAnalysis) {

@@ -217,8 +217,8 @@ export default function AnalysisHistory({
     if (onRecordClick) {
       onRecordClick(record);
     } else {
-      // 默认跳转到分析详情页
-      router.push(`/analyze/${record.symbol}?history=${record._id}`);
+      // 默认跳转到分析详情页，带上日期参数
+      router.push(`/analyze/${record.symbol}?history=${record._id}&date=${encodeURIComponent(record.analysisDate)}`);
     }
   };
   

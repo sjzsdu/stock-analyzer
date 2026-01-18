@@ -229,18 +229,114 @@ def process_individual_info(info: pd.DataFrame, symbol: str) -> Dict[str, Any]:
     info_dict = dict(zip(info.iloc[:, 0], info.iloc[:, 1]))
 
     for key, value in info_dict.items():
-        if "A股" in str(key) and "总市值" in str(key):
-            result["market_cap"] = parse_chinese_number(str(value))
-        elif "公司名称" in str(key) or "上市地点" in str(key):
-            result["name"] = str(value)
-        elif "上市日期" in str(key):
-            result["listing_date"] = str(value)
-        elif "公司主页" in str(key):
-            result["website"] = str(value)
-        elif "所属行业" in str(key):
-            result["industry"] = str(value)
+        key_str = str(key).strip()
+        value_str = str(value).strip() if value else ""
+
+        if "总市值" in key_str:
+            result["market_cap"] = parse_chinese_number(value_str)
+        elif "流通市值" in key_str:
+            result["circulating_market_cap"] = parse_chinese_number(value_str)
+        elif "股票简称" in key_str or "公司名称" in key_str:
+            result["name"] = value_str
+        elif "上市时间" in key_str or "上市日期" in key_str:
+            result["listing_date"] = value_str
+        elif "公司主页" in key_str:
+            result["website"] = value_str
+        elif "行业" in key_str:
+            result["industry"] = value_str
+        elif "主营业务" in key_str or "主要产品" in key_str:
+            result["business_scope"] = value_str
+        elif "注册资本" in key_str:
+            result["registered_capital"] = value_str
+        elif "总股本" in key_str:
+            result["total_shares"] = parse_chinese_number(value_str)
+        elif "流通股" in key_str:
+            result["circulating_shares"] = parse_chinese_number(value_str)
 
     return result
+
+
+def process_valuation_data(df: pd.DataFrame) -> Dict[str, Any]:
+    """处理估值数据 stock_value_em"""
+    result = {}
+
+    if df is None or len(df) == 0:
+        return result
+
+    try:
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return result
+
+        latest = df.iloc[0]
+
+        result["pe_ttm"] = safe_float(latest.get("PE(TTM)"))
+        result["pe_static"] = safe_float(latest.get("PE(静)"))
+        result["pb"] = safe_float(latest.get("市净率"))
+        result["peg"] = safe_float(latest.get("PEG值"))
+        result["ps"] = safe_float(latest.get("市销率"))
+        result["pcf"] = safe_float(latest.get("市现率"))
+
+    except Exception as e:
+        print(f"[AkShare] 估值数据处理错误: {e}")
+
+    return result
+
+
+def process_ths_financial_data(df: pd.DataFrame) -> FinancialMetrics:
+    """处理同花顺财务数据 stock_financial_abstract_new_ths"""
+    metrics = FinancialMetrics()
+
+    if df is None or len(df) == 0:
+        return metrics
+
+    try:
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return metrics
+
+        metric_map = {
+            "index_full_diluted_roe": "roe",
+            "parent_holder_net_profit": "net_profit",
+            "basic_eps": "basic_eps",
+            "operating_income_total": "total_revenue",
+            "current_ratio": "current_ratio",
+            "quick_ratio": "quick_ratio",
+            "sale_gross_margin": "gross_profit_margin",
+            "assets_debt_ratio": "debt_to_equity",
+            "conservative_quick_ratio": "quick_ratio",
+        }
+
+        latest_period = df["report_period"].max()
+        latest_df = df[df["report_period"] == latest_period]
+
+        for _, row in latest_df.iterrows():
+            metric_name = row.get("metric_name", "")
+            value = row.get("value")
+
+            if metric_name in metric_map:
+                field_name = metric_map[metric_name]
+                float_value = safe_float(value)
+                if float_value is not None:
+                    if field_name == "roe":
+                        metrics.roe = float_value
+                    elif field_name == "net_profit":
+                        metrics.net_profit = float_value * 1e8  # 转换为元
+                    elif field_name == "basic_eps":
+                        metrics.basic_eps = float_value
+                    elif field_name == "total_revenue":
+                        metrics.revenue_history.append(float_value * 1e8)
+                    elif field_name == "current_ratio":
+                        metrics.current_ratio = float_value
+                    elif field_name == "quick_ratio":
+                        metrics.quick_ratio = float_value
+                    elif field_name == "gross_profit_margin":
+                        metrics.gross_profit_margin = float_value
+                    elif field_name == "debt_to_equity":
+                        metrics.debt_to_equity = float_value
+
+    except Exception as e:
+        print(f"[AkShare] 同花顺财务数据处理错误: {e}")
+
+    return metrics
 
 
 def process_financial_em(df: pd.DataFrame) -> FinancialMetrics:
@@ -430,6 +526,7 @@ def process_akshare_kline(df: pd.DataFrame) -> List[KlineData]:
             low=float(row.get("最低", 0)),
             close=float(row.get("收盘", 0)),
             volume=int(row.get("成交量", 0)),
+            turnover=float(row.get("成交额", 0)) or None,
         )
         kline_list.append(kline)
 
@@ -633,59 +730,77 @@ async def collect_a_share_data(symbol: str) -> StockAnalysisResult:
             # 1. 获取实时行情
             try:
                 print("[AkShare] 开始获取实时行情...")
-                spot_basic = None
-
-                # 直接跳过可能卡住的实时行情接口，使用K线数据作为替代
-                basic = StockBasicInfo()
-                basic.symbol = symbol
-                basic.name = symbol  # 临时名称，后续会更新
-                basic.current_price = 0
-                basic.pre_close = 0
-                basic.change_amount = 0
-                basic.change_pct = 0
-                basic.market_cap = 0  # 市值
-                basic.circulating_market_cap = 0  # 流通市值
-                basic.pe_ratio = 0.0  # PE(TTM)
-                basic.pb_ratio = 0.0  # PB
-                basic.dividend_yield = 0.0  # 股息率
-                result.basic = basic
-                print("[AkShare] 跳过实时行情接口，使用默认值")
-
+                spot_df = ak.stock_zh_a_spot()
+                if spot_df is not None and len(spot_df) > 0:
+                    spot_basic = process_spot_data(spot_df, symbol)
+                    if spot_basic:
+                        if not result.basic:
+                            result.basic = spot_basic
+                        else:
+                            result.basic.current_price = spot_basic.current_price
+                            result.basic.change_pct = spot_basic.change_pct
+                            result.basic.change_amount = spot_basic.change_amount
+                            result.basic.open = spot_basic.open
+                            result.basic.high = spot_basic.high
+                            result.basic.low = spot_basic.low
+                            result.basic.pre_close = spot_basic.pre_close
+                            result.basic.volume = spot_basic.volume
+                            result.basic.pe_ratio = spot_basic.pe_ratio
+                            result.basic.pb_ratio = spot_basic.pb_ratio
+                            result.basic.dividend_yield = spot_basic.dividend_yield
+                            result.basic.turnover_rate = spot_basic.turnover_rate
+                        print(
+                            f"[AkShare] 实时行情获取成功: 价格={spot_basic.current_price}"
+                        )
+                    else:
+                        print(f"[AkShare] 实时行情未找到匹配的股票: {symbol}")
+                else:
+                    print("[AkShare] 实时行情数据为空")
             except Exception as e:
                 print(f"[AkShare] 实时行情获取失败: {e}")
-                # 创建默认的基本信息
-                basic = StockBasicInfo()
-                basic.symbol = symbol
-                basic.name = symbol
-                basic.current_price = 0
-                basic.pre_close = 0
-                basic.change_amount = 0
-                basic.change_pct = 0
-                basic.market_cap = 0  # 市值
-                basic.circulating_market_cap = 0  # 流通市值
-                basic.pe_ratio = 0.0  # PE(TTM)
-                basic.pb_ratio = 0.0  # PB
-                basic.dividend_yield = 0.0  # 股息率
-                result.basic = basic
-                print("[AkShare] 创建默认基本信息")
+                if not result.basic:
+                    result.basic = StockBasicInfo()
+                    result.basic.symbol = symbol
+                    result.basic.name = symbol
+                    result.basic.industry = "未知行业"
+                else:
+                    result.basic.name = result.basic.name or symbol
+                    result.basic.industry = result.basic.industry or "未知行业"
 
             # 2. 获取个股详细信息
             try:
                 print("[AkShare] 开始获取个股详细信息...")
-                # 跳过可能卡住的 stock_individual_info_em 接口
-                # 直接设置基本信息
-                if result.basic:
-                    result.basic.name = symbol  # 使用代码作为名称
-                    result.basic.industry = "未知行业"  # 设置默认行业
+                info_df = ak.stock_individual_info_em(symbol=symbol)
+                if info_df is not None and len(info_df) > 0:
+                    info_dict = process_individual_info(info_df, symbol)
+                    if result.basic:
+                        if info_dict.get("name"):
+                            result.basic.name = info_dict["name"]
+                        if info_dict.get("industry"):
+                            result.basic.industry = info_dict["industry"]
+                        if info_dict.get("listing_date"):
+                            result.basic.listing_date = info_dict["listing_date"]
+                        if info_dict.get("website"):
+                            result.basic.website = info_dict["website"]
+                        if info_dict.get("market_cap"):
+                            result.basic.market_cap = info_dict["market_cap"]
+                        if info_dict.get("circulating_market_cap"):
+                            result.basic.circulating_market_cap = info_dict[
+                                "circulating_market_cap"
+                            ]
                     print(
-                        f"[AkShare] 跳过个股详细信息接口，使用默认值: 名称={result.basic.name}"
+                        f"[AkShare] 个股详细信息获取成功: 名称={result.basic.name if result.basic else 'N/A'}, 行业={result.basic.industry if result.basic and result.basic.industry else 'N/A'}"
                     )
+                else:
+                    print("[AkShare] 个股详细信息为空")
+                    if result.basic:
+                        result.basic.name = result.basic.name or symbol
+                        result.basic.industry = result.basic.industry or "未知行业"
             except Exception as e:
                 print(f"[AkShare] 个股信息获取失败: {e}")
-                # 如果获取失败，确保 basic 有默认值
                 if result.basic:
-                    result.basic.name = symbol
-                    result.basic.industry = "未知行业"
+                    result.basic.name = result.basic.name or symbol
+                    result.basic.industry = result.basic.industry or "未知行业"
 
             # 3. 获取概念标签
             try:
@@ -726,6 +841,29 @@ async def collect_a_share_data(symbol: str) -> StockAnalysisResult:
                         print(
                             f"[AkShare] 使用K线数据更新实时行情: 价格={last_kline.close}"
                         )
+
+                    # 计算 52 周最高/最低
+                    if len(hist_data) >= 20:
+                        hist_df = hist_data.copy()
+                        hist_df["日期"] = pd.to_datetime(hist_df["日期"])
+                        hist_df = hist_df.sort_values("日期")
+
+                        # 最近 252 个交易日（约 1 年）
+                        last_year_df = hist_df.tail(252)
+                        if len(last_year_df) > 0 and result.basic:
+                            result.basic.week_52_high = float(
+                                last_year_df["最高"].max()
+                            )
+                            result.basic.week_52_low = float(last_year_df["最低"].min())
+
+                            # 换手率
+                            if "换手率" in hist_df.columns:
+                                latest_turnover = hist_df.iloc[-1]["换手率"]
+                                result.basic.turnover_rate = safe_float(latest_turnover)
+
+                            print(
+                                f"[AkShare] 52周数据: 高={result.basic.week_52_high}, 低={result.basic.week_52_low}, 换手率={result.basic.turnover_rate}"
+                            )
             except Exception as e:
                 print(f"[AkShare] K线数据获取失败: {e}")
                 # 如果K线数据获取失败，创建空的K线列表
@@ -750,16 +888,37 @@ async def collect_a_share_data(symbol: str) -> StockAnalysisResult:
             # 6. 获取财务数据 (使用EM接口)
             try:
                 financial_df = ak.stock_financial_analysis_indicator_em(symbol=symbol)
-                result.financial = process_financial_em(financial_df)
-                print(f"[AkShare] 财务数据获取成功, ROE={result.financial.roe}")
+                if financial_df is not None and len(financial_df) > 0:
+                    result.financial = process_financial_em(financial_df)
+                    print(f"[AkShare] 财务数据获取成功, ROE={result.financial.roe}")
+                else:
+                    raise ValueError("财务数据为空")
             except Exception as e:
                 print(f"[AkShare] 财务数据获取失败: {e}")
                 try:
                     financial_df = ak.stock_financial_analysis_indicator(symbol=symbol)
-                    result.financial = process_financial_em(financial_df)
-                    print(f"[AkShare] 备用财务数据接口成功")
+                    if financial_df is not None and len(financial_df) > 0:
+                        result.financial = process_financial_em(financial_df)
+                        print(f"[AkShare] 备用财务数据接口成功")
+                    else:
+                        raise ValueError("备用财务数据为空")
                 except Exception as e2:
                     print(f"[AkShare] 备用财务数据也失败: {e2}")
+                    try:
+                        ths_financial_df = ak.stock_financial_abstract_new_ths(
+                            symbol=symbol
+                        )
+                        if ths_financial_df is not None and len(ths_financial_df) > 0:
+                            result.financial = process_ths_financial_data(
+                                ths_financial_df
+                            )
+                            print(
+                                f"[AkShare] 同花顺财务数据获取成功, ROE={result.financial.roe}"
+                            )
+                        else:
+                            raise ValueError("同花顺财务数据为空")
+                    except Exception as e3:
+                        print(f"[AkShare] 同花顺财务数据也失败: {e3}")
 
             # 7. 获取新闻数据
             try:
@@ -772,7 +931,24 @@ async def collect_a_share_data(symbol: str) -> StockAnalysisResult:
             except Exception as e:
                 print(f"[AkShare] 新闻数据获取失败: {e}")
 
-            # 8. 补充行业信息
+            # 8. 获取估值数据 (PE, PB 等)
+            try:
+                valuation_df = ak.stock_value_em(symbol=symbol)
+                valuation_data = process_valuation_data(valuation_df)
+                if valuation_data and result.basic:
+                    if valuation_data.get("pe_ttm"):
+                        result.basic.pe_ratio = valuation_data["pe_ttm"]
+                    if valuation_data.get("pb"):
+                        result.basic.pb_ratio = valuation_data["pb"]
+                    if valuation_data.get("ps"):
+                        result.basic.ps_ratio = valuation_data["ps"]
+                    print(
+                        f"[AkShare] 估值数据获取成功: PE(TTM)={result.basic.pe_ratio}, PB={result.basic.pb_ratio}"
+                    )
+            except Exception as e:
+                print(f"[AkShare] 估值数据获取失败: {e}")
+
+            # 9. 补充行业信息
             if result.basic and not result.basic.industry:
                 try:
                     industry_info = process_industry_info(symbol)

@@ -1,6 +1,7 @@
 'use client';
-import { useEffect, useState, use, useCallback } from 'react';
+import { useEffect, useState, use, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, Clock, Home, Search, RefreshCw, BarChart3, Lightbulb, BrainCircuit, Check, Zap, Database, TrendingUp, AlertCircle, Sparkles, Globe } from 'lucide-react';
 import StockKLineChart from '@/components/StockKLineChart';
 import StockOverviewCard from '@/components/StockOverviewCard';
@@ -61,6 +62,15 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
   const [isAnalyzingResult, setIsAnalyzingResult] = useState(false);
 
   const symbol = decodeURIComponent(resolvedParams.symbol);
+  const searchParams = useSearchParams();
+  const analysisDate = searchParams.get('date');
+
+  // 使用 ref 存储最新的 analysisDate，避免 useEffect 依赖循环
+  const analysisDateRef = useRef(analysisDate);
+
+  useEffect(() => {
+    analysisDateRef.current = analysisDate;
+  }, [analysisDate]);
 
   const {
     progress,
@@ -89,11 +99,7 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
     setData(null);
     setIsAnalyzingResult(true);
 
-    const market = symbol.match(/^\d{6}$/) ? 'A' :
-                   symbol.includes('.HK') ? 'HK' :
-                   /^[A-Za-z]+$/.test(symbol) ? 'US' : 'A';
-
-    await startAnalysis(symbol, market);
+    await startAnalysis(symbol);
   }, [symbol, startAnalysis]);
 
   const fetchExistingAnalysis = useCallback(async () => {
@@ -102,7 +108,16 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
     setIsAnalyzingResult(false);
 
     try {
-      const response = await fetch(`/api/analysis/history/${symbol}`);
+      // 使用 ref 获取最新的 analysisDate
+      const currentAnalysisDate = analysisDateRef.current;
+      
+      // 构建请求 URL，包含日期参数
+      let apiUrl = `/api/analysis/history/${symbol}`;
+      if (currentAnalysisDate) {
+        apiUrl += `?date=${encodeURIComponent(currentAnalysisDate)}`;
+      }
+
+      const response = await fetch(apiUrl);
       const result = await response.json();
 
       if (result.success && result.data) {
@@ -124,15 +139,17 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
       console.log('没有历史记录，自动开始分析...');
       await startSSEAnalysis();
 
-    } catch {
+    } catch (err) {
+      console.error('获取历史记录失败:', err);
       console.log('获取历史记录失败，自动开始分析...');
       await startSSEAnalysis();
     }
-  }, [symbol, startSSEAnalysis]);
+  }, [symbol, startSSEAnalysis]); // 只依赖 symbol 和 startSSEAnalysis
 
   useEffect(() => {
+    // 避免无限循环，只在组件挂载时或 symbol 变化时调用
     fetchExistingAnalysis();
-  }, [symbol]);
+  }, [symbol]); // 移除 analysisDate 和 fetchExistingAnalysis 依赖
 
   const formatElapsedTime = (seconds: number): string => {
     if (seconds < 60) return `${Math.floor(seconds)}秒`;
@@ -530,7 +547,7 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
             <div className="text-center mb-6">
               <h3 className="text-white/60 text-sm mb-2">综合评分</h3>
               <div className="text-7xl font-bold gradient-text">
-                {(data.overallScore as number)?.toFixed(1) || '--'}
+                {(data.overallScore as number) ? (data.overallScore as number).toFixed(1) : '--'}
               </div>
             </div>
 
@@ -540,13 +557,14 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
                 data.recommendation === 'buy' ? 'bg-gradient-to-r from-green-400 to-green-600' :
                 data.recommendation === 'hold' ? 'bg-gradient-to-r from-yellow-400 to-yellow-600' :
                 data.recommendation === 'wait' ? 'bg-gradient-to-r from-orange-400 to-orange-600' :
-                'bg-gradient-to-r from-red-500 to-red-700'
+                data.recommendation === 'sell' ? 'bg-gradient-to-r from-red-500 to-red-700' :
+                'bg-gradient-to-r from-gray-500 to-gray-600'
               }`}>
                 {data.recommendation === 'strong_buy' ? '强烈买入' :
                  data.recommendation === 'buy' ? '买入' :
                  data.recommendation === 'hold' ? '持有' :
                  data.recommendation === 'wait' ? '观望' : 
-                 data.recommendation === 'sell' ? '卖出' : '分析中'}
+                 data.recommendation === 'sell' ? '卖出' : (data.overallScore ? '待分析' : '暂无评分')}
               </span>
             </div>
 

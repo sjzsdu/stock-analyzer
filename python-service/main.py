@@ -11,10 +11,28 @@ from typing import Optional
 import uvicorn
 import asyncio
 import json
+from json import JSONEncoder
+import numpy as np
 import uuid
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from pathlib import Path
+
+
+# 自定义 JSON 编码器，处理 NaN 值
+class CustomJSONEncoder(JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (np.integer, int)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, float)):
+            if np.isnan(obj):
+                return None
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
 import time
 from collections import defaultdict
 from typing import Dict, Tuple
@@ -148,7 +166,7 @@ def check_rate_limit(client_id: str) -> Optional[int]:
 
 class StockRequest(BaseModel):
     symbol: str
-    market: str  # 'A', 'HK', 'US'
+    market: str = "A"  # 'A', 'HK', 'US', 默认为 A 股
 
 
 class StockDataResponse(BaseModel):
@@ -423,8 +441,12 @@ async def get_analysis_progress(job_id: str):
     """
     job = AnalysisJob.get(job_id)
     if not job:
-        return {"error": "Job not found", "job_id": job_id}
-    return job
+        return json.loads(
+            json.dumps(
+                {"error": "Job not found", "job_id": job_id}, cls=CustomJSONEncoder
+            )
+        )
+    return json.loads(json.dumps(job, cls=CustomJSONEncoder))
 
 
 @app.get("/api/analyze/stream/{job_id}")
@@ -436,7 +458,7 @@ async def stream_analysis_progress(job_id: str, request: Request):
     async def event_generator():
         job = AnalysisJob.get(job_id)
         if not job:
-            yield f"data: {json.dumps({'error': 'Job not found', 'job_id': job_id})}\n\n"
+            yield f"data: {json.dumps({'error': 'Job not found', 'job_id': job_id}, cls=CustomJSONEncoder)}\n\n"
             return
 
         max_retries = 300  # 5分钟最大等待时间
@@ -446,21 +468,21 @@ async def stream_analysis_progress(job_id: str, request: Request):
         while retry_count < max_retries:
             job = AnalysisJob.get(job_id)
             if not job:
-                yield f"data: {json.dumps({'error': 'Job cancelled', 'job_id': job_id})}\n\n"
+                yield f"data: {json.dumps({'error': 'Job cancelled', 'job_id': job_id}, cls=CustomJSONEncoder)}\n\n"
                 break
 
             # 检查是否完成或失败
             if job["status"] == "completed":
-                yield f"data: {json.dumps({'stage': 'complete', 'progress': 100, 'message': '分析完成!', 'result': job.get('result')})}\n\n"
+                yield f"data: {json.dumps({'stage': 'complete', 'progress': 100, 'message': '分析完成!', 'result': job.get('result')}, cls=CustomJSONEncoder)}\n\n"
                 break
             elif job["status"] == "failed":
-                yield f"data: {json.dumps({'stage': 'error', 'progress': -1, 'message': job.get('message', '分析失败'), 'error': job.get('error')})}\n\n"
+                yield f"data: {json.dumps({'stage': 'error', 'progress': -1, 'message': job.get('message', '分析失败'), 'error': job.get('error')}, cls=CustomJSONEncoder)}\n\n"
                 break
 
             # 只在进度更新时发送
             if job["progress"] != last_progress:
                 last_progress = job["progress"]
-                yield f"data: {json.dumps(job)}\n\n"
+                yield f"data: {json.dumps(job, cls=CustomJSONEncoder)}\n\n"
 
             # 检查客户端是否断开连接
             if await request.is_disconnected():
@@ -496,23 +518,28 @@ async def analyze_stock_async(request: StockRequest, request_obj: Request):
 
     async def run_analysis():
         try:
-            # 阶段1: 检查缓存
+            # 阶段1: 检查缓存（仅用于判断是否需要重新采集数据）
             AnalysisJob.update(job_id, "check_cache", 5, "检查缓存中...")
+            cached_result = None
+            use_cache = False
             result = await collect_a_share_data(symbol)
             if result.success and result.timestamp:
                 try:
                     result_time = datetime.fromisoformat(result.timestamp)
                     if (datetime.now() - result_time).total_seconds() < 24 * 3600:
+                        cached_result = stock_result_to_dict(result)
+                        use_cache = True
                         AnalysisJob.update(job_id, "check_cache", 10, "使用缓存数据")
-                        AnalysisJob.complete(job_id, stock_result_to_dict(result))
-                        return
                 except:
                     pass
 
-            # 阶段2: 采集数据
+            # 阶段2: 采集数据（如果需要）
             AnalysisJob.update(job_id, "collect_basic", 15, "采集股票基本信息...")
-            stock_result = await collect_a_share_data(symbol)
-            stock_data = stock_result_to_dict(stock_result)
+            if not use_cache:
+                stock_result = await collect_a_share_data(symbol)
+                stock_data = stock_result_to_dict(stock_result)
+            else:
+                stock_data = cached_result
             if not stock_data.get("success"):
                 raise ValueError(stock_data.get("error", "数据采集失败"))
 
