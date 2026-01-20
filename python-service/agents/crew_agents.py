@@ -268,42 +268,199 @@ def create_agents() -> list:
 
 
 def run_crew_analysis(symbol: str, stock_data: dict) -> dict:
-    """运行CrewAI多Agent分析"""
-    from crewai import Agent, Task, Crew, Process
-    import json
+    """运行CrewAI多Agent分析 - 混合执行模式
 
+    优化策略：
+    - 6个分析Agent并行执行 (value, technical, growth, fundamental, risk, macro)
+    - synthesizer串行执行，综合所有分析结果
+    - 预计速度提升 2-4 倍
+    """
+    from crewai import Agent, Task
+    import time
+    import re
+    import sys
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    start_time = time.time()
     try:
-        print(f"[CrewAI] 开始多Agent分析: {symbol}")
+        print(f"[CrewAI] 开始混合模式分析: {symbol}")
 
         # 创建 Agent
         agents = create_agents()
 
-        # 格式化数据
+        # 格式化精简数据
         data_summary = format_data_summary(stock_data)
         kline_summary = format_kline_summary(stock_data.get("kline", []))
+        financial_summary = format_financial_data(stock_data)
+        industry_summary = format_industry_data(stock_data)
 
-        # 创建任务
-        stock_name = stock_data.get("basic", {}).get("name", symbol)
-        tasks = create_tasks(
-            symbol, stock_name, stock_data, agents, data_summary, kline_summary
+        # 准备精简数据上下文
+        data_context = f"""
+股票代码: {symbol}
+股票名称: {stock_data.get("basic", {}).get("name", symbol)}
+
+基本数据:
+{data_summary}
+
+技术数据:
+{kline_summary}
+
+财务数据:
+{financial_summary}
+
+行业数据:
+{industry_summary}
+"""
+
+        cfg = config()
+        parallel_roles = [
+            "value",
+            "technical",
+            "growth",
+            "fundamental",
+            "risk",
+            "macro",
+        ]
+
+        # Agent 索引映射
+        agent_map = {
+            "value": 0,
+            "technical": 1,
+            "growth": 2,
+            "fundamental": 3,
+            "risk": 4,
+            "macro": 5,
+            "synthesizer": 6,
+        }
+
+        def run_single_agent(agent_type: str) -> dict:
+            """运行单个Agent并返回结果"""
+            agent_index = agent_map.get(agent_type, 0)
+            agent = agents[agent_index]
+
+            base_prompt = get_agent_prompt(
+                agent_type, stock_data.get("basic", {}).get("name", symbol), symbol
+            )
+
+            task = Task(
+                description=base_prompt
+                + f"\n\n数据上下文:\n{data_context}\n\n请严格按照模板格式输出分析结果。",
+                expected_output=f"{agent_type}分析报告",
+                agent=agent,
+            )
+
+            try:
+                result = task.execute_sync()
+                result_str = str(result) if not isinstance(result, str) else result
+
+                # DEBUG: Search for score/confidence patterns in output
+                import re
+
+                score_patterns = [
+                    (r"综合评分[:：]?\s*(\d+)分?", "综合评分"),
+                    (r"评分[:：]?\s*(\d+)分?", "评分"),
+                    (r"(\d{2})\s*分", "XX分"),
+                ]
+                conf_patterns = [
+                    (r"综合置信度[:：]?\s*(\d+)", "综合置信度"),
+                ]
+
+                print(f"[DEBUG] {agent_type} patterns found:")
+                for p, name in score_patterns:
+                    matches = re.findall(p, result_str)
+                    if matches:
+                        print(f"  {name}: {matches}")
+                for p, name in conf_patterns:
+                    matches = re.findall(p, result_str)
+                    if matches:
+                        print(f"  {name}: {matches}")
+
+                return {"agent": agent_type, "result": result_str}
+            except Exception as e:
+                print(f"[CrewAI] {agent_type} 执行错误: {e}")
+                return {
+                    "agent": agent_type,
+                    "result": f"## {agent_type.title()} 分析\n\n分析失败: {str(e)[:200]}",
+                }
+
+        # 并行执行6个分析Agent
+        print(f"[CrewAI] 开始并行执行 {len(parallel_roles)} 个分析任务...")
+        agent_outputs = []
+
+        with ThreadPoolExecutor(max_workers=len(parallel_roles)) as executor:
+            futures = {
+                executor.submit(run_single_agent, role): role for role in parallel_roles
+            }
+
+            completed_count = 0
+            for future in as_completed(futures):
+                role = futures[future]
+                try:
+                    output = future.result()
+                    agent_outputs.append(output)
+                    completed_count += 1
+                    print(
+                        f"[CrewAI] {role} 完成 ({completed_count}/{len(parallel_roles)})"
+                    )
+                except Exception as e:
+                    print(f"[CrewAI] {role} 失败: {e}")
+                    # 添加默认输出
+                    agent_outputs.append(
+                        {
+                            "agent": role,
+                            "result": f"## {role.title()} 分析\n\n分析失败: {str(e)}",
+                        }
+                    )
+
+        # 准备合成器输入
+        agent_outputs_text = "\n\n".join(
+            [
+                f"=== {o['agent'].upper()} AGENT ===\n{o['result']}"
+                for o in agent_outputs
+            ]
         )
 
-        # 创建 Crew
-        crew = Crew(
-            agents=agents,
-            tasks=tasks,
-            process=Process.sequential,
-            verbose=True,
+        # 串行执行 synthesizer
+        print("[CrewAI] 开始综合分析...")
+        synthesizer_agent = agents[agent_map["synthesizer"]]
+        synthesizer_prompt = get_agent_prompt(
+            "synthesizer", stock_data.get("basic", {}).get("name", symbol), symbol
         )
 
-        # 执行分析
-        result = crew.kickoff()
+        synthesis_task = Task(
+            description=synthesizer_prompt
+            + f"""
 
-        print(f"[CrewAI] 分析完成")
-        return parse_analysis_result(result, symbol, stock_data)
+已完成的多Agent分析结果:
+{agent_outputs_text}
+
+请综合以上所有分析结果，生成最终的综合分析报告。
+
+请严格按照模板格式输出综合分析结果。""",
+            expected_output="综合分析报告",
+            agent=synthesizer_agent,
+        )
+
+        final_result = synthesis_task.execute_sync()
+        final_result_str = (
+            str(final_result) if not isinstance(final_result, str) else final_result
+        )
+
+        elapsed = time.time() - start_time
+        print(f"[CrewAI] 分析完成，耗时: {elapsed:.1f}秒")
+
+        # 解析结果
+        full_output = (
+            final_result_str
+            + "\n\n"
+            + "\n\n".join([o["result"] for o in agent_outputs])
+        )
+
+        return parse_analysis_result(full_output, symbol, stock_data)
 
     except Exception as e:
-        print(f"[CrewAI] 分析失败: {e}")
+        elapsed = time.time() - start_time
+        print(f"[CrewAI] 分析失败 (耗时 {elapsed:.1f}秒): {e}")
         import traceback
 
         traceback.print_exc()
@@ -318,18 +475,43 @@ def format_data_summary(stock_data: dict) -> str:
 
 
 def format_kline_summary(kline: list) -> str:
-    """格式化K线摘要"""
+    """格式化K线摘要 - 精简版"""
     if not kline:
-        return "No K-line data"
-    recent = kline[-5:] if len(kline) >= 5 else kline
-    from datetime import datetime
+        return "无K线数据"
 
-    return "\n".join(
-        [
-            f"{datetime.fromtimestamp(r.timestamp / 1000).strftime('%Y-%m-%d')}: C={r.close:.2f}"
-            for r in recent
-        ]
-    )
+    # 兼容 dict 和 object 格式
+    def get_close_price(item):
+        if isinstance(item, dict):
+            return item.get("close") or item.get(4) or item.get(2) or 0
+        return getattr(item, "close", 0)
+
+    def get_date(item):
+        if isinstance(item, dict):
+            ts = item.get("timestamp") or item.get(0)
+            if ts:
+                from datetime import datetime
+
+                try:
+                    ts = float(ts)
+                    if ts > 1e12:
+                        ts /= 1000
+                    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+                except:
+                    return str(ts)
+        elif hasattr(item, "timestamp"):
+            from datetime import datetime
+
+            try:
+                ts = float(item.timestamp)
+                if ts > 1e12:
+                    ts /= 1000
+                return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+            except:
+                return str(item.timestamp)
+        return "N/A"
+
+    recent = kline[-5:] if len(kline) >= 5 else kline
+    return " | ".join([f"{get_date(r)}: C={get_close_price(r):.2f}" for r in recent])
 
 
 def format_financial_data(stock_data: dict) -> str:
@@ -374,7 +556,7 @@ def create_tasks(
     data_summary: str,
     kline_summary: str,
 ) -> list:
-    """创建分析任务 - 使用增强版Prompt模板"""
+    """创建分析任务 - 已废弃，请使用 run_crew_analysis 中的混合模式"""
     from crewai import Task
 
     cfg = config()
@@ -439,12 +621,12 @@ def parse_analysis_result(result, symbol: str, stock_data: dict) -> dict:
 
     # 查找各Agent的输出部分
     agent_sections = {
-        "value": r"## 估值分析\s*([\s\S]*?)(?=##|\Z)",
-        "technical": r"## 技术分析\s*([\s\S]*?)(?=##|\Z)",
-        "growth": r"## 成长分析\s*([\s\S]*?)(?=##|\Z)",
-        "fundamental": r"## 基本面分析\s*([\s\S]*?)(?=##|\Z)",
-        "risk": r"## 风险评估\s*([\s\S]*?)(?=##|\Z)",
-        "macro": r"## 宏观分析\s*([\s\S]*?)(?=##|\Z)",
+        "value": r"## 估值分析\n*([\s\S]*?)(?=\n## [^\s#]|\Z)",
+        "technical": r"## 技术分析\n*([\s\S]*?)(?=\n## [^\s#]|\Z)",
+        "growth": r"## 成长分析\n*([\s\S]*?)(?=\n## [^\s#]|\Z)",
+        "fundamental": r"## 基本面分析\n*([\s\S]*?)(?=\n## [^\s#]|\Z)",
+        "risk": r"## 风险评估\n*([\s\S]*?)(?=\n## [^\s#]|\Z)",
+        "macro": r"## 宏观分析\n*([\s\S]*?)(?=\n## [^\s#]|\Z)",
     }
 
     stock_name = stock_data.get("basic", {}).get("name", symbol)

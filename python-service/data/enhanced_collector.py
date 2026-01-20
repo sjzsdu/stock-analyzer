@@ -509,6 +509,9 @@ def process_akshare_kline(df: pd.DataFrame) -> List[KlineData]:
 
     for _, row in df.iterrows():
         try:
+            if row is None:
+                continue
+                
             date_val = row.get("日期")
             if date_val is None:
                 date_val = row.get("Datetime", datetime.now())
@@ -519,16 +522,24 @@ def process_akshare_kline(df: pd.DataFrame) -> List[KlineData]:
         except:
             timestamp = int(datetime.now().timestamp() * 1000)
 
-        kline = KlineData(
-            timestamp=timestamp,
-            open=float(row.get("开盘", 0)),
-            high=float(row.get("最高", 0)),
-            low=float(row.get("最低", 0)),
-            close=float(row.get("收盘", 0)),
-            volume=int(row.get("成交量", 0)),
-            turnover=float(row.get("成交额", 0)) or None,
-        )
-        kline_list.append(kline)
+        try:
+            if row is None:
+                kline_list.append(KlineData())
+                continue
+                
+            kline = KlineData(
+                timestamp=timestamp,
+                open=float(row.get("开盘", 0)),
+                high=float(row.get("最高", 0)),
+                low=float(row.get("最低", 0)),
+                close=float(row.get("收盘", 0)),
+                volume=int(row.get("成交量", 0)),
+                turnover=float(row.get("成交额", 0)) or None,
+            )
+            kline_list.append(kline)
+        except Exception as e:
+            print(f"[AkShare] 处理K线数据失败: {e}")
+            kline_list.append(KlineData(timestamp=timestamp))
 
     return kline_list
 
@@ -541,8 +552,23 @@ def calculate_technical_indicators(kline_data: List[Dict]) -> TechnicalIndicator
         return indicators
 
     try:
-        closes = [k["close"] for k in kline_data]
-        volumes = [k["volume"] for k in kline_data]
+        # 过滤掉 None 值并确保数据完整性
+        valid_kline_data = []
+        for k in kline_data:
+            if k is not None and isinstance(k, dict):
+                if "close" in k and "volume" in k:
+                    # 确保值是有效的数字
+                    try:
+                        if float(k["close"]) > 0 and float(k["volume"]) >= 0:
+                            valid_kline_data.append(k)
+                    except:
+                        continue
+        
+        if len(valid_kline_data) < 5:
+            return indicators
+
+        closes = [float(k["close"]) for k in valid_kline_data]
+        volumes = [float(k["volume"]) for k in valid_kline_data]
 
         if len(closes) < 5:
             return indicators

@@ -101,15 +101,27 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
             throw new Error('获取进度失败');
           }
 
-          const progressData = await progressResponse.json();
+           const progressData = await progressResponse.json();
 
-          if (progressData.error) {
-            stopPolling();
-            setError(progressData.error);
-            setLoading(false);
-            setIsAnalyzing(false);
-            return;
-          }
+           console.log('[分析] 进度更新:', progressData);
+
+           // 检查返回数据是否有效
+           if (!progressData || typeof progressData !== 'object') {
+             console.log('[分析] 无效的进度数据，停止轮询');
+             stopPolling();
+             setError('获取进度失败，请稍后重试');
+             setLoading(false);
+             setIsAnalyzing(false);
+             return;
+           }
+
+           if (progressData.error) {
+             stopPolling();
+             setError(progressData.error);
+             setLoading(false);
+             setIsAnalyzing(false);
+             return;
+           }
 
           // 更新进度
           setProgress({
@@ -121,20 +133,62 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
           // 检查是否完成
           if (progressData.status === 'completed') {
             stopPolling();
-            if (progressData.result) {
-              setData(progressData.result);
+            
+            // 打印完整数据结构用于调试
+            console.log('[分析] 完整 progressData 结构:');
+            for (const key in progressData) {
+              const val = progressData[key];
+              const valStr = typeof val === 'object' ? JSON.stringify(val).substring(0, 150) : val;
+              console.log(`  ${key}: ${typeof val} = ${valStr}`);
+            }
+            
+            // result 可能在 job.result 中，或者直接在 job 中
+            const resultData = progressData.result || progressData;
+            
+            console.log('[分析] resultData 结构:');
+            if (resultData) {
+              for (const key in resultData) {
+                const val = resultData[key];
+                const valStr = typeof val === 'object' ? JSON.stringify(val).substring(0, 150) : val;
+                console.log(`  ${key}: ${typeof val} = ${valStr}`);
+              }
             } else {
-              setError('分析完成但没有返回结果');
+              console.log('  resultData is null or undefined');
+            }
+            
+            // 处理两种数据格式: agentResults 或 roleAnalysis
+            const hasAgentResults = resultData?.agentResults && resultData.agentResults.length > 0;
+            const hasRoleAnalysis = resultData?.roleAnalysis && resultData.roleAnalysis.length > 0;
+            const hasOverallScore = resultData?.overallScore !== undefined && resultData?.overallScore !== null;
+            
+            console.log('[分析] hasAgentResults:', hasAgentResults);
+            console.log('[分析] hasRoleAnalysis:', hasRoleAnalysis);
+            console.log('[分析] hasOverallScore:', hasOverallScore, '(value:', resultData?.overallScore, ')');
+
+            // 放宽检查条件：如果有数据就显示
+            if (resultData && (hasOverallScore || hasAgentResults || hasRoleAnalysis || resultData.basic)) {
+              console.log('[分析] 设置数据成功');
+              setData(resultData);
+            } else {
+              console.log('[分析] 未找到有效的分析结果，progressData:', progressData);
+              setError('分析完成但没有返回有效结果');
             }
             setLoading(false);
             setIsAnalyzing(false);
           }
           // 检查是否失败
-          else if (progressData.status === 'failed') {
+          else if (progressData?.status === 'failed' || progressData?.status === 'error') {
             stopPolling();
-            setError(progressData.message || progressData.error || '分析失败');
+            // Safely handle potential null/undefined values
+            const errorMsg = progressData?.message || progressData?.error || progressData?.details || '分析失败，请稍后重试';
+            setError(errorMsg);
             setLoading(false);
             setIsAnalyzing(false);
+          }
+          // 处理意外的 status 值
+          else if (progressData?.status && !['pending', 'running', 'completed', 'failed', 'error'].includes(progressData.status)) {
+            console.log('[分析] 未知的状态:', progressData.status);
+            // 不一定是错误，可能是中间状态，继续等待
           }
 
         } catch (err) {
@@ -158,6 +212,17 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
     setProgress(null);
 
     try {
+      const PYTHON_API_URL = process.env.NEXT_PUBLIC_PYTHON_API_URL || 'http://localhost:8000';
+
+      // 首先检查后端服务是否可用
+      console.log('检查后端服务状态...');
+      const healthResponse = await fetch(`${PYTHON_API_URL}/health`);
+      if (!healthResponse.ok) {
+        setError('后端服务不可用，请确保 Python 服务已启动。');
+        setLoading(false);
+        return;
+      }
+
       const currentAnalysisDate = analysisDateRef.current;
       
       let apiUrl = `/api/analysis/history/${symbol}`;
@@ -238,8 +303,35 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
                 </div>
               </div>
 
+              {/* Agent 进度显示 */}
+              {isAnalyzing && (
+                <div className="w-full max-w-md bg-white/5 rounded-xl p-4 mb-4">
+                  <p className="text-xs text-white/40 mb-3 text-left">AI Agent 执行状态:</p>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    {['价值分析', '技术分析', '成长分析', '基本面', '风险评估', '宏观分析'].map((name, idx) => (
+                      <div key={name} className="flex items-center gap-2 text-left">
+                        <div className={`w-2 h-2 rounded-full ${
+                          (progress?.progress || 0) > (idx + 1) * 15 ? 'bg-green-400' : 'bg-white/20'
+                        }`} />
+                        <span className={`${(progress?.progress || 0) > (idx + 1) * 15 ? 'text-green-400' : 'text-white/40'}`}>
+                          {name}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-2 text-left col-span-2">
+                      <div className={`w-2 h-2 rounded-full ${
+                        (progress?.progress || 0) >= 95 ? 'bg-green-400' : 'bg-white/20'
+                      }`} />
+                      <span className={`${(progress?.progress || 0) >= 95 ? 'text-green-400' : 'text-white/40'}`}>
+                        综合分析
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <p className="text-sm text-white/40">
-                AI 分析可能需要 1-3 分钟，请耐心等待...
+                AI 分析预计需要 20-60 秒，请耐心等待...
               </p>
 
               <button
@@ -262,6 +354,8 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
   // 错误状态
   if (error && !data) {
     const isApiKeyError = error.includes('DEEPSEEK_API_KEY') || error.includes('API key');
+    const isServiceError = error.includes('服务不可用') || error.includes('服务未启动') || error.includes('Failed to fetch');
+    const isMongoError = error.includes('MongoDB') || error.includes('数据库');
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#0a0f1a] via-[#0f172a] to-[#1a2332] text-white flex items-center justify-center relative">
@@ -273,7 +367,9 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
           <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg bg-gradient-to-br from-red-500 to-orange-600">
             <AlertTriangle className="w-10 h-10 text-white" />
           </div>
-          <h2 className="text-3xl font-bold mb-4">分析失败</h2>
+          <h2 className="text-3xl font-bold mb-4">
+            {isServiceError ? '服务未启动' : '分析失败'}
+          </h2>
 
           <div className="bg-white/5 rounded-xl p-6 mb-6 text-left">
             <p className="text-white/80 text-sm mb-2">错误信息：</p>
@@ -281,6 +377,32 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
               {error}
             </pre>
           </div>
+
+          {isServiceError && (
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6 mb-6 text-left">
+              <h3 className="text-yellow-400 font-semibold mb-3 flex items-center gap-2">
+                <span className="text-xl">⚠️ 服务启动检查</span>
+              </h3>
+              <p className="text-white/80 text-sm mb-4">
+                后端服务未启动，请启动以下服务后再试：
+              </p>
+              <div className="bg-black/30 rounded-lg p-4 font-mono text-xs text-yellow-300 space-y-3">
+                <div>
+                  <p className="font-semibold text-yellow-400 mb-1">1. 启动 MongoDB（数据库）：</p>
+                  <p className="ml-2">brew services start mongodb-community</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-yellow-400 mb-1">2. 启动 Python 后端：</p>
+                  <p className="ml-2">cd python-service && python main.py</p>
+                  <p className="ml-2 text-white/50">或 pnpm dev:be</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-yellow-400 mb-1">3. 启动 Next.js 前端：</p>
+                  <p className="ml-2">pnpm dev:fe</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {isApiKeyError && (
             <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-6 mb-6 text-left">
@@ -295,6 +417,21 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
                 <p>2. 编辑文件: <code className="text-yellow-400">python-service/.env</code></p>
                 <p>3. 设置: <code className="text-yellow-400">DEEPSEEK_API_KEY=sk-xxx</code></p>
                 <p>4. 重启 Python 服务</p>
+              </div>
+            </div>
+          )}
+
+          {isMongoError && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 mb-6 text-left">
+              <h3 className="text-red-400 font-semibold mb-3 flex items-center gap-2">
+                <span className="text-xl">数据库连接失败</span>
+              </h3>
+              <p className="text-white/80 text-sm mb-4">
+                MongoDB 数据库未启动或连接失败。
+              </p>
+              <div className="bg-black/30 rounded-lg p-4 font-mono text-xs text-red-300 space-y-2">
+                <p>启动 MongoDB:</p>
+                <p className="ml-2">brew services start mongodb-community</p>
               </div>
             </div>
           )}
@@ -335,10 +472,10 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
           <div className="glass-effect rounded-3xl p-8 card-hover">
             <div className="flex flex-col items-center text-center">
               <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mb-4">
-                <AlertCircle className="w-8 h-8 text-white/40" />
+                <Brain className="w-8 h-8 text-white/40" />
               </div>
-              <h3 className="text-xl font-bold text-white mb-2">暂无分析数据</h3>
-              <p className="text-white/60 mb-6">点击下方按钮开始分析</p>
+              <h3 className="text-xl font-bold text-white mb-2">准备开始 AI 分析</h3>
+              <p className="text-white/60 mb-6">点击下方按钮开始对股票 {symbol} 的深度 AI 分析</p>
               <button
                 onClick={startAnalysis}
                 disabled={isAnalyzing}
@@ -347,6 +484,9 @@ export default function AnalyzePage({ params }: { params: Promise<{ symbol: stri
                 <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
                 {isAnalyzing ? '分析中...' : '开始分析'}
               </button>
+              <p className="text-white/40 text-sm mt-4">
+                分析可能需要 1-2 分钟，请耐心等待
+              </p>
             </div>
           </div>
         </div>

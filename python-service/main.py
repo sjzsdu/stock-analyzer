@@ -405,12 +405,24 @@ async def get_analysis_progress(job_id: str):
     """
     job = AnalysisJob.get(job_id)
     if not job:
-        return json.loads(
-            json.dumps(
-                {"error": "Job not found", "job_id": job_id}, cls=CustomJSONEncoder
-            )
-        )
-    return json.loads(json.dumps(job, cls=CustomJSONEncoder))
+        return {"error": "Job not found", "job_id": job_id}
+
+    # 处理 NaN 值
+    import math
+
+    def clean_nan(obj):
+        if isinstance(obj, float) and math.isnan(obj):
+            return None
+        elif isinstance(obj, dict):
+            return {k: clean_nan(v) for k, v in obj.items() if v is not None}
+        elif isinstance(obj, list):
+            return [clean_nan(v) for v in obj if v is not None]
+        return obj
+
+    # 直接返回 dict，确保 result 字段正确传递
+    if isinstance(job, dict):
+        return clean_nan(job)
+    return clean_nan(job)
 
 
 @app.get("/api/analyze/stream/{job_id}")
@@ -559,8 +571,20 @@ async def analyze_stock_async(request: StockRequest, request_obj: Request):
                 "timestamp": datetime.now().isoformat(),
             }
             print(f"[Analysis] final_result keys: {list(final_result.keys())}")
-            print(f"[Analysis] agentResults: {final_result.get('agentResults')}")
             print(f"[Analysis] overallScore: {final_result.get('overallScore')}")
+            print(f"[Analysis] recommendation: {final_result.get('recommendation')}")
+            print(
+                f"[Analysis] agentResults type: {type(final_result.get('agentResults'))}"
+            )
+            print(
+                f"[Analysis] agentResults length: {len(final_result.get('agentResults', []))}"
+            )
+            print(
+                f"[Analysis] roleAnalysis type: {type(final_result.get('roleAnalysis'))}"
+            )
+            print(
+                f"[Analysis] roleAnalysis length: {len(final_result.get('roleAnalysis', []))}"
+            )
 
             AnalysisJob.update(job_id, "complete", 100, "分析完成!")
             AnalysisJob.complete(job_id, final_result)

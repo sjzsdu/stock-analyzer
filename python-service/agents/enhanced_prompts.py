@@ -554,12 +554,13 @@ def get_agent_prompt(agent_type: str, stock_name: str, symbol: str) -> str:
 
 def parse_analysis_output(agent_type: str, output: str) -> Dict[str, Any]:
     """解析各Agent的输出，提取关键信息"""
+    import sys
 
     result = {
         "agent": agent_type,
         "summary": "",
-        "score": 0,
-        "confidence": 0,
+        "score": 50,
+        "confidence": 50,
         "recommendation": "hold",
         "key_factors": [],
         "risks": [],
@@ -568,20 +569,76 @@ def parse_analysis_output(agent_type: str, output: str) -> Dict[str, Any]:
     }
 
     try:
-        # 提取评分
         import re
 
-        # 尝试提取综合评分
-        score_match = re.search(r"综合评分[:：]?\s*(\d+)", output)
+        # Find all XX分 patterns
+        all_score_matches = re.findall(r"(\d{2})\s*分", output)
+
+        # Step 1: Try to find "综合评分" first
+        score_match = re.search(r"综合评分[:：]?\s*\*?(\d+)\*?\s*(?:分)?", output)
         if score_match:
             result["score"] = int(score_match.group(1))
+        else:
+            # Step 2: Calculate from dimension scores
+            dimension_scores = []
 
-        # 尝试提取置信度
-        confidence_match = re.search(r"综合置信度[:：]?\s*(\d+)", output)
-        if confidence_match:
-            result["confidence"] = int(confidence_match.group(1))
+            # Try to find dimension scores with keywords
+            dim_keywords = [
+                "数据完整性",
+                "数据准确性",
+                "指标一致性",
+                "行业可比性",
+                "趋势明确性",
+                "增长持续性",
+                "风险量化准确性",
+                "周期判断准确性",
+            ]
 
-        # 尝试提取推荐
+            for keyword in dim_keywords:
+                pattern = rf"{keyword}[:：]?\s*\*\*?(\d+)\*\*?\s*分"
+                matches = re.findall(pattern, output)
+                for m in matches:
+                    score = int(m)
+                    if 20 <= score <= 100:
+                        dimension_scores.append(score)
+
+            # If no keyword matches, try generic pattern
+            if not dimension_scores:
+                generic_matches = re.findall(r"\*\*(\d{2})\*\*", output)
+                if not generic_matches:
+                    generic_matches = re.findall(r"(\d{2})\s*分", output)
+
+                for m in generic_matches:
+                    score = int(m)
+                    if 20 <= score <= 100:
+                        dimension_scores.append(score)
+
+            # Filter out confidence scores
+            if len(dimension_scores) >= 2:
+                filtered = []
+                for s in dimension_scores:
+                    if s < 65 or s > 95:
+                        filtered.append(s)
+                    else:
+                        idx = output.find(str(s))
+                        if idx >= 0:
+                            context = output[max(0, idx - 40) : idx + 40]
+                            if not any(
+                                kw in context
+                                for kw in ["置信度", "Confidence", "综合置信"]
+                            ):
+                                filtered.append(s)
+                dimension_scores = filtered
+
+            if len(dimension_scores) >= 2:
+                result["score"] = int(sum(dimension_scores) / len(dimension_scores))
+
+        # Step 3: Find confidence
+        conf_match = re.search(r"综合置信度[:：]?\s*\*?(\d+)\*?\s*(?:分|%)?", output)
+        if conf_match:
+            result["confidence"] = int(conf_match.group(1))
+
+        # Step 4: Extract recommendation
         recommendation_map = {
             "强烈买入": "strong_buy",
             "买入": "buy",
@@ -596,17 +653,17 @@ def parse_analysis_output(agent_type: str, output: str) -> Dict[str, Any]:
                 result["recommendation"] = en
                 break
 
-        # 提取关键因素（通常是列表项）
+        # Step 5: Extract key factors
         factor_match = re.findall(r"[•\-\*]\s*(\[?[^\n]+\]?)", output)
-        result["key_factors"] = factor_match[:5]  # 取前5个
+        result["key_factors"] = factor_match[:5]
 
-        # 提取风险因素
+        # Step 6: Extract risks
         risk_section = re.search(r"###\s*风险因素?([\s\S]*?)###", output)
         if risk_section:
             risks = re.findall(r"[•\-\*]\s*([^\n]+)", risk_section.group(1))
             result["risks"] = risks[:3]
 
-        # 提取摘要
+        # Step 7: Extract summary
         summary_match = re.search(r"##\s*执行摘要\s*([\s\S]*?)##", output)
         if summary_match:
             result["summary"] = summary_match.group(1).strip()[:200]

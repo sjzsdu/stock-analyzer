@@ -133,14 +133,109 @@ def save_analysis_to_mongodb_sync(
     job_id: str,
 ) -> bool:
     """
-    Synchronous wrapper for save_analysis_to_mongodb.
+    同步保存分析结果到 MongoDB
+    修复: 避免在已有 event loop 中调用 run_until_complete
     """
-    loop = asyncio.new_event_loop()
     try:
-        return loop.run_until_complete(
-            save_analysis_to_mongodb(
-                symbol, market, stock_data, analysis_result, job_id
+        from pymongo import MongoClient
+        from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+        import math  # 用于处理 NaN
+
+        mongo_uri = get_mongodb_uri()
+
+        try:
+            client = MongoClient(
+                mongo_uri, serverSelectionTimeoutMS=5000, connectTimeoutMS=5000
             )
-        )
-    finally:
-        loop.close()
+            client.admin.command("ping")
+        except (ConnectionFailure, ServerSelectionTimeoutError):
+            print(f"[MongoDB] 连接失败，跳过保存")
+            return False
+
+        db = client.get_default_database()
+        collection = db["stockanalyses"]
+
+        # 清理 NaN 值
+        def clean_nan(value):
+            if isinstance(value, float) and math.isnan(value):
+                return None
+            elif isinstance(value, dict):
+                return {k: clean_nan(v) for k, v in value.items()}
+            elif isinstance(value, list):
+                return [clean_nan(v) for v in value]
+            return value
+
+        # 清理分析结果
+        cleaned_result = clean_nan(analysis_result)
+
+        document = {
+            "symbol": symbol,
+            "market": market,
+            "stockName": stock_data.get("stock_name") or stock_data.get("name"),
+            "overallScore": cleaned_result.get("overallScore"),
+            "recommendation": cleaned_result.get("recommendation"),
+            "confidenceScore": cleaned_result.get("confidence"),
+            "summary": cleaned_result.get("summary"),
+            "executiveSummary": cleaned_result.get("executive_summary"),
+            "keyFactors": cleaned_result.get("keyFactors", []),
+            "roleAnalysis": [],
+            "agentResults": [],
+            "risks": cleaned_result.get("risks", []),
+            "opportunities": cleaned_result.get("opportunities", []),
+            "model": cleaned_result.get("model", "DeepSeek"),
+            "processingTime": cleaned_result.get("processingTime"),
+            "tokenUsage": cleaned_result.get("tokenUsage", {}),
+            "generatedAt": datetime.now(),
+            "analysisMetadata": {
+                "job_id": job_id,
+                "data_timestamp": stock_data.get("timestamp"),
+                "cached": stock_data.get("cached", False),
+            },
+        }
+
+        agent_mapping = {
+            "value": "价值分析",
+            "technical": "技术分析",
+            "growth": "成长分析",
+            "fundamental": "基本面分析",
+            "risk": "风险评估",
+            "macro": "宏观分析",
+        }
+
+        for role, analysis in cleaned_result.get("detailed_analysis", {}).items():
+            if isinstance(analysis, dict):
+                role_doc = {
+                    "role": role,
+                    "score": analysis.get("score"),
+                    "analysis": analysis.get("analysis"),
+                    "keyPoints": analysis.get("key_points", []),
+                }
+                document["roleAnalysis"].append(role_doc)
+
+                agent_doc = {
+                    "agent": role,
+                    "summary": analysis.get("summary"),
+                    "score": analysis.get("score"),
+                    "confidence": analysis.get("confidence"),
+                    "recommendation": analysis.get("recommendation"),
+                    "key_factors": analysis.get("key_points", []),
+                    "risks": analysis.get("risks", []),
+                    "details": analysis.get("details"),
+                    "raw_output": analysis.get("raw_output"),
+                }
+                document["agentResults"].append(agent_doc)
+
+        result = collection.insert_one(document)
+        print(f"[MongoDB] 分析结果已保存: {symbol}, ID: {result.inserted_id}")
+        client.close()
+        return True
+
+    except ImportError:
+        print("[MongoDB] pymongo 未安装，跳过保存")
+        return False
+    except Exception as e:
+        print(f"[MongoDB] 保存失败: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return False
